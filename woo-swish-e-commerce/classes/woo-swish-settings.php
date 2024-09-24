@@ -204,6 +204,16 @@ class Woo_Swish_Settings
             'description' => __('This is the description which the user sees during checkout.', 'woo-swish-e-commerce'),
             'default' => __('Enter your Swish-number and press Process. After that you open your Swish App and authorize the payment that we sent to your app.', 'woo-swish-e-commerce'),
         );
+
+        if ($gateway->get_option('swish_redirect_back') == 'yes') {
+            $settings['mobile_description'] = array(
+                'title' => __('Mobile description', 'woo-swish-e-commerce'),
+                'type' => 'textarea',
+                'description' => __('This is the description which the user sees during checkout on mobile devices.', 'woo-swish-e-commerce'),
+                'default' => __('Press proceed to start the payment in the Swish App. You will be redirected back to the shop after the payment is completed.', 'woo-swish-e-commerce'),
+            );
+        }
+            
         $settings['swish_alias_mirror_billing_phone'] = array(
             'title' => __('Mirror billing phone number', 'woo-swish-e-commerce'),
             'type' => 'checkbox',
@@ -241,16 +251,28 @@ class Woo_Swish_Settings
             'label' => __('Redirect on mobile', 'woo-swish-e-commerce'),
             'default' => 'yes',
         );
+
+        if ($gateway->get_option('swish_redirect_on_mobile') == 'yes') {
+            $settings['swish_redirect_back'] = array(
+                'title' => __('Redirect back to shop', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'description' => __('If enabled, the customer will be redirected back to the shop after the payment is completed on mobile devices.', 'woo-swish-e-commerce'),
+                'label' => __('Redirect back to shop', 'woo-swish-e-commerce'),
+                'default' => 'yes',
+            );
+        }
+
         $settings['swish_checkout_type'] = array(
             'title' => __('Select type of checkout', 'woo-swish-e-commerce'),
             'type' => 'select',
-            'default' => 'seperate_internal',
+            'default' => 'seperate_internal_v2',
             'description' => __('Select the type of checkout you want the user to see. The modal checkout does not work with all themes.', 'woo-swish-e-commerce'),
             'options' => array(
                 '' => __('Plain checkout', 'woo-swish-e-commerce'),
                 'modal' => __('Modal checkout', 'woo-swish-e-commerce'),
                 'legacy' => __('Legacy checkout', 'woo-swish-e-commerce'),
-                'seperate_internal' => __('Default checkout (recommended)', 'woo-swish-e-commerce'),
+                'seperate_internal' => __('Separate checkout', 'woo-swish-e-commerce'),
+                'seperate_internal_v2' => __('Default checkout (recommended)', 'woo-swish-e-commerce'),
             ),
         );
         $settings['swish_order_state'] = array(

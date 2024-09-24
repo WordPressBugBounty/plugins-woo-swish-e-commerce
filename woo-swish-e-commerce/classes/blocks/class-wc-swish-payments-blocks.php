@@ -90,12 +90,13 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
     {
         return [
             'title' => $this->get_setting('title'),
-            'description' => $this->get_setting('description'),
+            'description' => $this->gateway->description,
             'supports' => array_filter($this->gateway->supports, [$this->gateway, 'supports']),
             //        'enableForVirtual' => $this->get_enable_for_virtual(),
             //         'enableForShippingMethods' => $this->get_enable_for_methods(),
             ///         'callbackUrl' => $this->get_callback_url(),
             'payeeAlias' => $this->get_setting('merchant_alias'),
+            'm_payment' => Woo_Swish_Helper::is_m_payment(),
             'placeholder' => $this->get_setting('number_placeholder'),
             'label' => $this->get_setting('number_label'),
             //        'message' => $this->get_message(),

@@ -42,7 +42,7 @@ class Woo_Swish_API_Functions
      * @return object
      * @throws Woo_Swish_API_Exception
      */
-    public function create($order, $payer_alias, $payee_alias, $payment_uuid, $callback)
+    public function create($order, $payer_alias = '', $payee_alias, $payment_uuid, $callback)
     {
 
         $order_id = $order->get_id();
@@ -62,12 +62,16 @@ class Woo_Swish_API_Functions
         $params = array(
             'payeePaymentReference' => (string) apply_filters('swish_payee_payment_reference', $this->clean_payee_payment_reference($order->get_order_number('edit')),$order),
             'callbackUrl' => (string) $callback,
-            'payerAlias' => (string) strlen($payer_alias) < 8 ? '4671234768' : $payer_alias,
             'payeeAlias' => (string) $payee_alias,
             'amount' => (string) str_replace(',', '.', $order->get_total()),
             'currency' => (string) $order->get_currency(),
             'message' => (string) apply_filters('swish_payment_message', strlen($payer_alias) < 8 ? $payer_alias : $transaction_text, $order),
         );
+
+        if ($payer_alias != '') {
+            $params['payerAlias'] = (string) strlen($payer_alias) < 8 ? '4671234768' : $payer_alias;
+            $params['message'] = (string) apply_filters('swish_payment_message', $transaction_text, $order);
+        }
 
         if (false !== ($age_limit = apply_filters('swish_age_limits', false, $order))) {
             $params['ageLimit'] = $age_limit;

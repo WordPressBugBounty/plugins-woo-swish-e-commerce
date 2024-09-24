@@ -20,7 +20,7 @@ defined('ABSPATH') || exit;
             <div class="swish-logo swish-centered">
                 <img id="swish-logo-id" class="swish-centered" src="<?php echo $swish_logo_text; ?>" />
             </div>
-            <?php do_action('swish_ecommerce_after_swish_logo');?>
+            <?php do_action('swish_ecommerce_after_swish_logo', $order_id);?>
         </div>
         <script>document.addEventListener('DOMContentLoaded', waitForPaymentModal);</script>
     </div>

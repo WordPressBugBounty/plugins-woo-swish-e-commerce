@@ -271,4 +271,39 @@ class Woo_Swish_Helper
         $order->set_transaction_id($payment_reference);
     }
 
+    public static function set_m_payment_reference($order, $m_payment_reference)
+    {
+        $order->update_meta_data('swish_m_payment_reference', $m_payment_reference);
+    }
+
+    public static function get_m_payment_reference($order)
+    {
+        return $order->get_meta('swish_m_payment_reference', true);
+    }
+
+    public static function is_redirected_from_swish() {
+        return isset($_GET['redirected_from_swish']) && $_GET['redirected_from_swish'] === 'true';
+    }
+
+    public static function is_m_payment($gateway = false)
+    {
+        $gateway_reference = $gateway ? $gateway : WC_SEC();
+        return wp_is_mobile() && $gateway_reference->get_option('swish_redirect_back') == 'yes';
+    }
+
+    public static function generate_swish_url($payment_request_token, $callback_url)
+    {
+        if (self::is_m_payment()) {
+            $callback_url = add_query_arg('redirected_from_swish', 'true', $callback_url);
+            $callback_url = urlencode($callback_url);
+            $m_payment_url = 'swish://paymentrequest?token=' . $payment_request_token . '&callbackurl=' . $callback_url . '#returnfromswish';
+            WC_SEC()->logger->add(sprintf('generate_swish_url: M-payment url %s', $m_payment_url));
+            return $m_payment_url;
+        }
+
+        return 'swish://';
+    }
+
+
+
 }

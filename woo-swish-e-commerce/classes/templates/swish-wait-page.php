@@ -29,7 +29,29 @@
             'message' => __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce')
         ));
     ?>
-    <script>document.addEventListener('DOMContentLoaded', waitForPaymentSeparateInternal);</script>
+    <script>
+
+        function initSwish() {
+
+            if (typeof waitForPaymentSeparateInternal !== 'function') {
+                setTimeout(initSwish, 1000);
+                console.log('waitForPaymentSeparateInternal does not exist - waiting...');
+                return;
+            }
+
+            console.log('waitForPaymentSeparateInternal exists - calling...');
+
+            if (document.readyState !== 'loading') {
+                console.log('Document is ready - calling waitForPaymentSeparateInternal');
+                waitForPaymentSeparateInternal();
+            } else {
+                console.log('Document is not ready - adding event listener');
+                document.addEventListener('DOMContentLoaded', waitForPaymentSeparateInternal);
+            }
+        }
+
+        initSwish();
+    </script>
 </head>
 
 <?php
