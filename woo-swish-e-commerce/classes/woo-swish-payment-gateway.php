@@ -958,6 +958,13 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $swish_url = Woo_Swish_Helper::generate_swish_url(Woo_Swish_Helper::get_m_payment_reference($order), $this->generate_redirect_url($order));
 
         if (wc_string_to_bool($this->get_option('swish_redirect_on_mobile'))) {
+
+            if (!wc_string_to_bool($this->get_option('swish_redirect_back'))) {
+                if ($order->is_paid()) {
+                    return;
+                }
+            }
+
             if (wp_is_mobile()) {?>
                     <script>
                         if (document.readyState !== 'loading') {

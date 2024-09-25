@@ -4,7 +4,7 @@ Tags: swish, ecommerce, payment, woocommerce, swish-handel
 Requires at least: 4.9
 Tested up to: 6.6
 Requires PHP: 7.0
-Stable tag: 3.6.8
+Stable tag: 3.6.9
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -59,6 +59,8 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.6.9 =
+* Fix: Swish redirect on mobile sometimes redirected you back to Swish event though the order was already paid
 = 3.6.8 =
 * Verified to work with WooCommerce 9.3
 * New: Added support for the Swish M-payment flow
