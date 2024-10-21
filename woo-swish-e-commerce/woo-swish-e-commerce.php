@@ -5,7 +5,7 @@
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.6.9
+ * Version: 3.7.0
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
@@ -21,7 +21,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.6.9');
+define('WCSW_VERSION', '3.7.0');
 define('WCSW_URL', plugins_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
@@ -141,7 +141,7 @@ class Swish_Commerce_Payments
             self::get_instance();
         }
 
-        if (wc_string_to_bool(self::$instance->get_option('swish_enable_blocks_checkout'))) {
+        if (wc_string_to_bool(self::$instance->get_option('swish_enable_blocks_checkout','yes'))) {
             require_once WCSW_PATH . 'classes/blocks/class-wc-swish-payments-blocks.php';
             // Registers WooCommerce Blocks integration.
             add_action('woocommerce_blocks_loaded', array(__CLASS__, 'woocommerce_gateway_swish_woocommerce_block_support'));

@@ -288,7 +288,7 @@ class Woo_Swish_Helper
     public static function is_m_payment($gateway = false)
     {
         $gateway_reference = $gateway ? $gateway : WC_SEC();
-        return wp_is_mobile() && $gateway_reference->get_option('swish_redirect_back') == 'yes';
+        return wp_is_mobile() && $gateway_reference->get_option('swish_redirect_back') == 'yes' && !self::is_non_standard_client();
     }
 
     public static function generate_swish_url($payment_request_token, $callback_url)
@@ -302,6 +302,35 @@ class Woo_Swish_Helper
         }
 
         return 'swish://';
+    }
+
+    public static function is_non_standard_client() {
+        // Check for specific user agents that might indicate non-standard clients
+        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? strtolower($_SERVER['HTTP_USER_AGENT']) : '';
+
+        $non_standard_clients = [
+            'snapchat',
+            'instagram'
+        ];
+
+        foreach ($non_standard_clients as $client) {
+            if (stripos($user_agent, $client) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function is_swish_declined_or_paid($order) {
+
+        $transaction_status = self::get_transaction_status($order);
+
+        if ($transaction_status == 'DECLINED' || $transaction_status == 'PAID') {
+            return true;
+        }
+
+        return false;
     }
 
 

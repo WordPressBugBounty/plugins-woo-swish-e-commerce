@@ -221,18 +221,6 @@ class Woo_Swish_Settings
             'label' => __('Mirror billing phone number', 'woo-swish-e-commerce'),
             'default' => '',
         );
-        $settings['enable_for_methods'] = array(
-            'title' => __('Enable for shipping methods', 'woo-swish-e-commerce'),
-            'type' => 'multiselect',
-            'class' => 'wc-enhanced-select',
-            'css' => 'width: 400px;',
-            'default' => array(),
-            'description' => __('If Swish is only available for certain methods, set it up here. Leave empty to enable for all methods.', 'woo-swish-e-commerce'),
-            'options' => apply_filters('swish_shipping_options', array()),
-            'custom_attributes' => array(
-                'data-placeholder' => __('Select methods', 'woo-swish-e-commerce'),
-            ),
-        );
         $settings['swish_show_button'] = array(
             'title' => __('Show "Start Swish app" button in these cases', 'woo-swish-e-commerce'),
             'type' => 'select',
@@ -302,6 +290,19 @@ class Woo_Swish_Settings
 
         if (wc_string_to_bool($gateway->get_option('show_advanced_options'))) {
 
+            $settings['enable_for_methods'] = array(
+                'title' => __('Enable for shipping methods', 'woo-swish-e-commerce'),
+                'type' => 'multiselect',
+                'class' => 'wc-enhanced-select',
+                'css' => 'width: 400px;',
+                'default' => array(),
+                'description' => __('If Swish is only available for certain methods, set it up here. Leave empty to enable for all methods.', 'woo-swish-e-commerce'),
+                'options' => apply_filters('swish_shipping_options', array()),
+                'custom_attributes' => array(
+                    'data-placeholder' => __('Select methods', 'woo-swish-e-commerce'),
+                ),
+            );
+
             $settings['callback_uses_shutdown_processing'] = array(
                 'title' => __('Shutdown processing', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
@@ -335,6 +336,13 @@ class Woo_Swish_Settings
                 'type' => 'checkbox',
                 'label' => __('Check to use the BjornTech central callback.', 'woo-swish-e-commerce'),
                 'default' => '',
+            );
+
+            $settings['swish_enable_react_wait_page'] = array(
+                'title' => __('Enable React wait page', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'label' => __('Enables the React wait page', 'woo-swish-e-commerce'),
+                'default' => 'yes',
             );
 
             $settings['swish_enable_blocks_checkout'] = array(

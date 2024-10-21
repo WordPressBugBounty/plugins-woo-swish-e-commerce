@@ -200,7 +200,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     }
 
     public function display_northmill_notice() {
-        if (!get_site_transient('swish_northmill_notice_displayed')) {
+        if (!(get_option('swish_northmill_notice_displayed') == 'yes')) {
             $notice =   __('<h2>Swish - Cheap and easy</h2>
                         <p>BjornTech can now offer an attractive Swish Handel solution through our partnership with Northmill Bank. Through this offer you\'ll get these benefits:</p>
                         <ul>
@@ -213,7 +213,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
             $id = SW_Notice::add($notice, 'warning', true, 'swish_northmill_notice');
 
-            set_site_transient('swish_northmill_notice_displayed', $id);
+            update_option('swish_northmill_notice_displayed', 'yes');
 
             $this->log('Updated Swish northmill notice displayed to yes');
         }
@@ -221,8 +221,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     }
 
     public function swish_wait_page_template_v2() {
-        $current_url = $_SERVER['REQUEST_URI'];
-
+        $current_url = home_url(add_query_arg(null, null));
         $wait_for_swish_path = '/wait-for-swish';
 
         if (strpos($current_url, $wait_for_swish_path) === false) {
@@ -231,9 +230,98 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         $order_id = isset($_GET['bt_swish_order_id']) ? intval($_GET['bt_swish_order_id']) : 0;
 
-        if ( $order_id ) {
-            include WCSW_PATH . 'classes/templates/swish-wait-page.php';
-            die;
+        $order = wc_get_order($order_id);
+
+        $swish_url = Woo_Swish_Helper::generate_swish_url(Woo_Swish_Helper::get_m_payment_reference($order), $this->generate_redirect_url($order));
+
+        if ($order_id) {
+            // Check if separate_internal_v2 is selected
+            if ($this->get_option('swish_checkout_type') === 'seperate_internal_v2' && $this->get_option('swish_enable_react_wait_page','yes') == 'yes') {
+                $this->log(sprintf('swish_wait_page_template_v2(%s): React wait page is enabled', $order_id));
+                // Output the HTML structure
+                ?>
+                <!DOCTYPE html>
+                <html style="height: 100%;" <?php language_attributes(); ?>>
+                    <head>
+                        <meta charset="<?php bloginfo('charset'); ?>">
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <?php 
+                            wp_head(); 
+                        
+                            wp_enqueue_script('wp-element');
+                            wp_enqueue_script('wp-components');
+                            wp_enqueue_script('wp-i18n');
+
+                            $script_asset_path = plugins_url('assets/js/frontend2/wait-page.asset.php', dirname(__FILE__));
+                            $script_asset = file_exists($script_asset_path) ? require($script_asset_path) : array('dependencies' => array(), 'version' => '1.0');
+                            // Enqueue scripts and styles
+                            wp_enqueue_script(
+                                'swish-wait-page-react', 
+                                plugins_url('assets/js/frontend2/wait-page.js', dirname(__FILE__)), 
+                                $script_asset['dependencies'],
+                                $script_asset['version']
+                            );
+
+                            $script_variables = array(
+                                'orderId' => $order_id,
+                                'ajaxUrl' => admin_url('admin-ajax.php'),
+                                'nonce' => wp_create_nonce('ajax_swish'),
+                                'swishLogoText' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png',
+                                'swishCircle' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png',
+                                'initialMessage' => __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce'),
+                                'showGotoSwishButton' => $this->show_goto_swish_button_in_react($order),
+                                'swishRedirectUrl' => $swish_url,
+                                'willRedirect' => $this->get_option('swish_redirect_on_mobile') == 'yes' && wp_is_mobile() && !Woo_Swish_Helper::is_redirected_from_swish() && !Woo_Swish_Helper::is_non_standard_client() && !Woo_Swish_Helper::is_swish_declined_or_paid($order),
+                                'showGotoSwishButtonText' => __('Open Swish', 'woo-swish-e-commerce')
+                            );
+
+                            wp_localize_script('swish-wait-page-react', 'swishWaitPageData', $script_variables);
+                        
+                        ?>
+                        <style>
+                            body {
+                                font-family: Arial, sans-serif;
+                                background-color: #f0f0f0;
+                                margin: 0;
+                                padding: 0;
+                                min-height: 100vh;
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                            }
+                            #swish-wait-page-root {
+                                width: 100%;
+                                max-width: 600px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background-color: #ffffff;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                            }
+
+                            @media (max-width: 600px) {
+                                body {
+                                    background-color: #ffffff;
+                                }
+                                #swish-wait-page-root {
+                                    box-shadow: none;
+                                    padding: 20px;
+                                }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div id="swish-wait-page-root"></div>
+                        <?php wp_footer(); ?>
+                    </body>
+                </html>
+                <?php
+                die;
+            } else {
+                $this->log(sprintf('swish_wait_page_template_v2(%s): React wait page is disabled', $order_id));
+                // Use the existing template for other options
+                include WCSW_PATH . 'classes/templates/swish-wait-page.php';
+                die;
+            }
         }
     }
 
@@ -266,6 +354,16 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('ajax_swish'),
             'message' => __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce')));
+
+        /*if ($this->get_option('swish_checkout_type') === 'seperate_internal_v2') {
+            wp_enqueue_script('swish-wait-page-react', Swish_Commerce_Payments::plugin_url() . '/assets/js/frontend2/wait-page.js', array(), $this->version, true);
+            wp_localize_script('swish-wait-page-react', 'swishWaitPageData', array(
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('ajax_swish'),
+                'swishLogo' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_Light-BG_SVG.svg',
+                'initialMessage' => __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce')
+            ));
+        }*/
     }
 
     /**
@@ -709,6 +807,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         }
 
+        $this->logger->add(sprintf('ajax_wait_for_payment (%s): Response %s', $order->get_id(), json_encode($response)));
+
         wp_send_json($response);
 
     }
@@ -906,6 +1006,35 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $this->update_option('swish_redirect_back', 'yes');
         $this->log('Updated Swish redirect back to yes');
 
+        $this->update_option('swish_enable_react_wait_page', 'yes');
+        $this->log('Updated Swish enable react wait page to yes');
+
+    }
+
+    public function show_goto_swish_button_in_react($order) {
+        if (Woo_Swish_Helper::is_non_standard_client()) {
+            return false;
+        }
+
+        if (Woo_Swish_Helper::is_redirected_from_swish()) {
+            return false;
+        }
+
+        if (Woo_Swish_Helper::is_swish_declined_or_paid($order)) {
+            return false;
+        }
+
+        $button_mode = $this->get_option('swish_show_button');
+
+        if (!isset($button_mode)) {
+            return false;
+        }
+
+        if ('all' !== $button_mode && !wp_is_mobile()) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -925,6 +1054,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $swish_url = Woo_Swish_Helper::generate_swish_url(Woo_Swish_Helper::get_m_payment_reference($order), $this->generate_redirect_url($order));
 
         if (Woo_Swish_Helper::is_redirected_from_swish()) {
+            return;
+        }
+
+        if (Woo_Swish_Helper::is_non_standard_client()) {
             return;
         }
 
@@ -952,6 +1085,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $order = wc_get_order($order_id);
         
         if (Woo_Swish_Helper::is_redirected_from_swish()) {
+            return;
+        }
+
+        if (Woo_Swish_Helper::is_swish_declined_or_paid($order)) {
             return;
         }
 
@@ -1371,6 +1508,13 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 Woo_Swish_Helper::set_m_payment_reference($order, $payment->payment_request_token);
             }
 
+            $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+
+            if ($user_agent) {
+                $this->log(sprintf('process_payment (%s): User agent %s', $order_id, $user_agent));
+            } else {
+                $this->log(sprintf('process_payment (%s): User agent not found', $order_id));
+            }
 
             Woo_Swish_Helper::set_transaction_location($order, isset($payment->location) ? $payment->location : '');
             Woo_Swish_Helper::set_transaction_status($order, 'WAITING');
