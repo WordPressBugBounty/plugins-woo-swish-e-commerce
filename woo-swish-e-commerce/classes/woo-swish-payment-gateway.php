@@ -200,7 +200,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     }
 
     public function display_northmill_notice() {
-        if (!(get_option('swish_northmill_notice_displayed') == 'yes')) {
+        if (!(get_option('swish_northmill_notice_displayed_2') == 'yes')) {
             $notice =   __('<h2>Swish - Cheap and easy</h2>
                         <p>BjornTech can now offer an attractive Swish Handel solution through our partnership with Northmill Bank. Through this offer you\'ll get these benefits:</p>
                         <ul>
@@ -213,7 +213,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
             $id = SW_Notice::add($notice, 'warning', true, 'swish_northmill_notice');
 
-            update_option('swish_northmill_notice_displayed', 'yes');
+            update_option('swish_northmill_notice_displayed_2', 'yes');
 
             $this->log('Updated Swish northmill notice displayed to yes');
         }
@@ -266,6 +266,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                                 'orderId' => $order_id,
                                 'ajaxUrl' => admin_url('admin-ajax.php'),
                                 'nonce' => wp_create_nonce('ajax_swish'),
+                                'swishFullLogo' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_RGB.png',
                                 'swishLogoText' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png',
                                 'swishCircle' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png',
                                 'initialMessage' => __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce'),
@@ -1136,6 +1137,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function swish_thankyou_modal($order_id)
     {
         $this->logger->add('Using modal checkout page');
+        $swish_full_logo = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_RGB.png';
         $swish_logo_text = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png';
         $swish_circle = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png';
         $swish_status = __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce');
@@ -1156,6 +1158,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     {
 
         $this->logger->add('Using standard checkout page');
+        $swish_full_logo = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_RGB.png';
         $swish_logo_text = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png';
         $swish_circle = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png';
         $swish_status = __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce');
@@ -1176,6 +1179,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     {
         $this->logger->add('Using legacy checkout page');
         remove_action('woocommerce_thankyou', 'woocommerce_order_details_table', 10);
+        $swish_full_logo = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_RGB.png';
         $swish_logo_text = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png';
         $swish_circle = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png';
         $swish_status = __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce');
@@ -1188,6 +1192,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         WC_SEC()->logger->add('Using standard checkout page for internal wait page - order ' . $order_id);
         $swish_logo_text = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Text.png';
+        $swish_full_logo = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_RGB.png';
         $swish_circle = Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Circle.png';
         $swish_status = __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce');
 
@@ -1374,6 +1379,14 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             wc_add_notice(__('Swish number missing', 'woo-swish-e-commerce'), 'error');
             return false;
         }
+
+        // For example if the number is 073-123 45 67 the user might have entered it as 73-123 45 67
+        // We will add the 0 in front of it
+
+        if ($payer_alias[0] == '7' && $number_lenght == 9) {
+            $payer_alias = '0' . $payer_alias;
+        }
+
         if ($payer_alias[0] == '0') {
             $payer_alias = '46' . substr($payer_alias, 1);
             $number_lenght = strlen($payer_alias);

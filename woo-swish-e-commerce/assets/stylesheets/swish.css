@@ -102,14 +102,14 @@
   width: 80%;
 }
 
-.swish-loader {
+/* .swish-loader {
   -webkit-animation: spin 2s linear infinite;
-  /* Safari */
+   Safari
   animation: spin 2s linear infinite;
-}
+} */
 
 /* Safari */
-@-webkit-keyframes spin {
+/*@-webkit-keyframes spin {
   0% {
     -webkit-transform: rotate(0deg);
   }
@@ -117,9 +117,9 @@
   100% {
     -webkit-transform: rotate(360deg);
   }
-}
+}*/
 
-@keyframes spin {
+/*@keyframes spin {
   0% {
     transform: rotate(0deg);
   }
@@ -127,7 +127,7 @@
   100% {
     transform: rotate(360deg);
   }
-}
+}*/
 
 #overlay {
   position: fixed;
@@ -158,8 +158,12 @@ label[for=payment_method_swish] {
   line-height: 32px;
 }
 
-.payment_method_swish img {
-  float: right;
+.wc-swish-label-container > img {
+  float: right !important;
+}
+
+.wc-swish-label-container > span {
+  float: left !important;
 }
 
 .swish_container {
@@ -184,6 +188,7 @@ label[for=payment_method_swish] {
 .swish-logo-internal {
   transform: scale(2);
   margin-top: max(50px, calc(1% + 3vw));
+  margin-bottom: max(50px, calc(1% + 3vw));
 }
 
 .swish-button-internal {

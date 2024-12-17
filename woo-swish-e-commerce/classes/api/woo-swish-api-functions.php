@@ -42,7 +42,7 @@ class Woo_Swish_API_Functions
      * @return object
      * @throws Woo_Swish_API_Exception
      */
-    public function create($order, $payer_alias = '', $payee_alias, $payment_uuid, $callback)
+    public function create($order, $payer_alias, $payee_alias, $payment_uuid, $callback)
     {
 
         $order_id = $order->get_id();

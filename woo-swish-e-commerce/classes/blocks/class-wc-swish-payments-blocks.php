@@ -101,6 +101,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
             'label' => $this->get_setting('number_label'),
             //        'message' => $this->get_message(),
             'logoText' => WCSW_URL . 'assets/images/Swish_Logo_Text.png',
+            'fullLogo' => WCSW_URL . 'assets/images/Swish_Logo_Primary_RGB.png',
             'logoImage' => WCSW_URL . 'assets/images/Swish_Logo_Circle.png',
             'icon' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Secondary_RGB.png',
         ];
