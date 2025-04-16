@@ -222,6 +222,26 @@ class Woo_Swish_Helper
         }
     }
 
+    public static function circumvent_404() {
+        if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'wait-for-swish') !== false) {
+            global $wp_query;
+            $wp_query->is_404 = false;
+        }
+
+        return;
+    }
+
+
+    public static function circumvent_litespeed_cache() {
+
+        if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'wait-for-swish') !== false) {
+            do_action( 'litespeed_control_set_nocache', 'no-cache for wait-for-swish' );
+        }
+
+        return;
+        
+    }
+
     /**
      * set_refund_payment_reference
      *
@@ -285,15 +305,41 @@ class Woo_Swish_Helper
         return isset($_GET['redirected_from_swish']) && $_GET['redirected_from_swish'] === 'true';
     }
 
-    public static function is_m_payment($gateway = false)
-    {
-        $gateway_reference = $gateway ? $gateway : WC_SEC();
-        return wp_is_mobile() && $gateway_reference->get_option('swish_redirect_back') == 'yes' && !self::is_non_standard_client();
+    public static function is_m_payment($redirect_back, $improved_mobile_detection)
+    {   
+        return self::is_mobile($improved_mobile_detection) && $redirect_back == 'yes' && !self::is_non_standard_client();
     }
 
-    public static function generate_swish_url($payment_request_token, $callback_url)
+    public static function is_mobile($improved_mobile_detection) {
+
+        $is_mobile = false; 
+
+        if ($improved_mobile_detection == 'yes') {
+            $is_mobile = self::improved_mobile_detection();
+        } else {
+            $is_mobile = wp_is_mobile();
+        }
+
+        return $is_mobile;
+    }
+
+    public static function improved_mobile_detection() {
+
+        try {
+            $mobile_detect = new WooSwishMobileDetection();
+            return $mobile_detect->isMobile() && !$mobile_detect->isTablet();
+        } catch (WooSwishMobileDetectException $e) {
+            error_log(sprintf('improved_mobile_detection: MobileDetectException %s', $e->getMessage()));
+            return false;
+        } catch (Exception $e) {
+            error_log(sprintf('improved_mobile_detection: Error %s', $e->getMessage()));
+            return false;
+        }
+    }
+
+    public static function generate_swish_url($payment_request_token, $callback_url, $is_m_payment)
     {
-        if (self::is_m_payment()) {
+        if ($is_m_payment) {
             $callback_url = add_query_arg('redirected_from_swish', 'true', $callback_url);
             $callback_url = urlencode($callback_url);
             $m_payment_url = 'swish://paymentrequest?token=' . $payment_request_token . '&callbackurl=' . $callback_url . '#returnfromswish';
@@ -331,6 +377,11 @@ class Woo_Swish_Helper
         }
 
         return false;
+    }
+    
+    public static function is_swish_paid($order) {
+        $transaction_status = self::get_transaction_status($order);
+        return $transaction_status == 'PAID';
     }
 
 

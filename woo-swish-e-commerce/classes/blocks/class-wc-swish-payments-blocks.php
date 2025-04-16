@@ -11,16 +11,10 @@ defined('ABSPATH') || exit;
 final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
 {
 
-    public function __construct(WC_Payment_Gateway_Swish $gateway)
+    public function __construct()
     {
-        $this->gateway = $gateway;
+        
     }
-    /**
-     * The gateway instance.
-     *
-     * @var WC_Payment_Gateway_Swish
-     */
-    private $gateway;
 
     /**
      * Payment method name/id/slug.
@@ -34,8 +28,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
      */
     public function initialize()
     {
-        $this->settings = $this->gateway->settings;
-
+        $this->settings = get_option('woocommerce_swish_settings' , []);
     }
 
     /**
@@ -45,7 +38,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
      */
     public function is_active()
     {
-        return $this->gateway->is_available();
+        return filter_var( $this->get_setting( 'enabled', false ), FILTER_VALIDATE_BOOLEAN );
     }
 
     /**
@@ -63,7 +56,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
         ? require $script_asset_path
         : array(
             'dependencies' => array(),
-            'version' => $this->gateway->version,
+            'version' => '10.0.0',
         );
 
         $result = wp_register_script(
@@ -90,15 +83,16 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
     {
         return [
             'title' => $this->get_setting('title'),
-            'description' => $this->gateway->description,
-            'supports' => array_filter($this->gateway->supports, [$this->gateway, 'supports']),
+            'description' => Woo_Swish_Helper::is_m_payment($this->get_setting('swish_redirect_back'), $this->get_setting('swish_improved_mobile_detection')) ? $this->get_setting('mobile_description') : $this->get_setting('description'),
+            'supports' => $this->get_supported_features(),
             //        'enableForVirtual' => $this->get_enable_for_virtual(),
             //         'enableForShippingMethods' => $this->get_enable_for_methods(),
             ///         'callbackUrl' => $this->get_callback_url(),
             'payeeAlias' => $this->get_setting('merchant_alias'),
-            'm_payment' => Woo_Swish_Helper::is_m_payment(),
+            'm_payment' => Woo_Swish_Helper::is_m_payment($this->get_setting('swish_redirect_back'), $this->get_setting('swish_improved_mobile_detection')),
             'placeholder' => $this->get_setting('number_placeholder'),
             'label' => $this->get_setting('number_label'),
+            'mirror_number' => $this->get_setting('swish_alias_mirror_billing_phone') == 'yes',
             //        'message' => $this->get_message(),
             'logoText' => WCSW_URL . 'assets/images/Swish_Logo_Text.png',
             'fullLogo' => WCSW_URL . 'assets/images/Swish_Logo_Primary_RGB.png',

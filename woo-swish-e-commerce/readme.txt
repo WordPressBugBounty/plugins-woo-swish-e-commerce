@@ -2,9 +2,9 @@
 Contributors: BjornTech
 Tags: swish, ecommerce, payment, woocommerce, swish-handel
 Requires at least: 4.9
-Tested up to: 6.7
-Requires PHP: 7.0
-Stable tag: 3.7.1
+Tested up to: 6.8
+Requires PHP: 7.4
+Stable tag: 3.7.3
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -59,6 +59,13 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.7.3 =
+* Verified to work with WooCommerce 9.8 and Wordpress 6.8
+* New: Added option to only show Swish Gateway when SEK is selected as currency in checkout
+* New: Added option to turn on improved mobile detection (enabled for new users per default)
+* Fix: Swish Wait page sometimes getting stuck in cache
+* Fix: Mirror number option not working when using WooCommerce blocks
+* Dev: Changed the way the plugin is loaded to make sure that it is loaded after the translations are initialized
 = 3.7.1 =
 * Verified to work with WooCommerce 9.5 and Wordpress 6.7
 * Fix: Swish label in the checkout page looked strange when using some other payment gateways alongside Swish

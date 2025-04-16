@@ -338,17 +338,24 @@ class Woo_Swish_Settings
                 'default' => '',
             );
 
+            $settings['swish_improved_mobile_detection'] = array(
+                'title' => __('Improved mobile detection', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'label' => __('Check to use improved mobile detection.', 'woo-swish-e-commerce'),
+                'default' => 'yes',
+            );
+
+            $settings['swish_enable_only_for_sek'] = array(
+                'title' => __('Enable only for SEK', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'label' => __('Check to enable Swish only for SEK', 'woo-swish-e-commerce'),
+                'default' => '',
+            );
+
             $settings['swish_enable_react_wait_page'] = array(
                 'title' => __('Enable React wait page', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Enables the React wait page', 'woo-swish-e-commerce'),
-                'default' => 'yes',
-            );
-
-            $settings['swish_enable_blocks_checkout'] = array(
-                'title' => __('Enable blocks checkout', 'woo-swish-e-commerce'),
-                'type' => 'checkbox',
-                'label' => __('Enables the Swish checkout in the WooCommerce checkout block', 'woo-swish-e-commerce'),
                 'default' => 'yes',
             );
 
