@@ -5,7 +5,7 @@
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.7.3
+ * Version: 3.7.4
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
@@ -21,7 +21,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.7.3');
+define('WCSW_VERSION', '3.7.4');
 define('WCSW_URL', plugins_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
@@ -43,7 +43,7 @@ class Swish_Commerce_Payments
     public static function init()
     {
         // Swish Payments gateway class.
-        add_action('init', array(__CLASS__, 'includes'), 200);
+        add_action('plugins_loaded', array(__CLASS__, 'includes'), 200);
 
         add_action('woocommerce_blocks_loaded', array(__CLASS__, 'blocks_init'));
 
@@ -95,7 +95,13 @@ class Swish_Commerce_Payments
         if (null === self::$instance) {
             require_once WCSW_PATH . 'classes/woo-swish-payment-gateway.php';
             self::$instance = new WC_Payment_Gateway_Swish();
-            self::$instance->hooks_and_filters();
+            if (did_action('init')) {
+                self::$instance->hooks_and_filters();
+            } else {
+                add_action('init', function() {
+                    self::$instance->hooks_and_filters();
+                }, 200);
+            }
         }
 
         return self::$instance;

@@ -58,8 +58,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function __construct()
     {
         $this->id = 'swish';
-        $this->method_title = __('Swish', 'woo-swish-e-commerce');
-        $this->method_description = __('Receive payments using Swish e-commerce.', 'woo-swish-e-commerce');
+        $this->method_title = 'Swish';
+        $this->method_description = 'Receive payments using Swish e-commerce.';
         $this->icon = '';
         $this->has_fields = true;
         $this->version = WCSW_VERSION;
@@ -77,7 +77,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         // Get gateway variables
         $this->title = $this->get_option('title');
 
-        $this->description = $this->is_m_payment() ? $this->get_option('mobile_description', __('Press proceed to start the payment in the Swish App. You will be redirected back to the shop after the payment is completed.', 'woo-swish-e-commerce')) : $this->get_option('description');
+        $this->description = $this->is_m_payment() ? $this->get_option('mobile_description', 'Press proceed to start the payment in the Swish App. You will be redirected back to the shop after the payment is completed.') : $this->get_option('description');
         $this->instructions = $this->get_option('instructions');
         $this->enable_for_methods = $this->get_option('enable_for_methods', array());
 
@@ -205,6 +205,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             new WC_Swish_Site_Age_Limit($site_age_limit);
         }
 
+        $this->swish_set_early_translations();
+
         do_action('bjorntech_swish_gateway_initiated');
 
     }
@@ -228,6 +230,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $this->log('Updated Swish northmill notice displayed to yes');
         }
 
+    }
+
+    public function swish_set_early_translations(){
+        $this->method_title = __('Swish', 'woo-swish-e-commerce');
+        $this->method_description = __('Receive payments using Swish e-commerce.', 'woo-swish-e-commerce');
+        $this->description = $this->is_m_payment() ? $this->get_option('mobile_description', __('Press proceed to start the payment in the Swish App. You will be redirected back to the shop after the payment is completed.', 'woo-swish-e-commerce')) : $this->get_option('description');
     }
 
     public function filter_available_payment_gateways($available_gateways) {
@@ -1048,6 +1056,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         if (!get_option('swish_refresh_token')) {
             $this->update_option('debug_log', 'yes');
             $this->log('Updated debug log to yes');
+
+            $this->update_option('swish_improved_mobile_detection', 'yes');
+            $this->log('Updated Swish improved mobile detection to yes');
         } else {
             return;
         }
