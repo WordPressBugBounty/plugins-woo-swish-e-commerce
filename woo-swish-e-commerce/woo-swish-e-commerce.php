@@ -1,18 +1,18 @@
 <?php
 
 /**
- * Plugin Name: Woo Swish e-commerce
+ * Plugin Name: BjornTech Swish for WooCommerce
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.7.4
+ * Version: 3.7.5
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
  * Text Domain: woo-swish-e-commerce
  *
  * WC requires at least: 4.0
- * WC tested up to: 9.8
+ * WC tested up to: 10.0
  *
  * Copyright:         2018-2020 BjornTech AB
  * License:           GNU General Public License v3.0
@@ -21,7 +21,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.7.4');
+define('WCSW_VERSION', '3.7.5');
 define('WCSW_URL', plugins_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
