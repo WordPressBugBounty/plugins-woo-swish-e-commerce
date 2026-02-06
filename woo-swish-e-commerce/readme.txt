@@ -2,9 +2,9 @@
 Contributors: BjornTech
 Tags: swish, ecommerce, payment, woocommerce, swish-handel
 Requires at least: 4.9
-Tested up to: 6.8
+Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 3.7.5
+Stable tag: 3.7.7
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -59,6 +59,17 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.7.7 =
+* Fix: Updated refund API from v1 to v2
+= 3.7.6 =
+* Verified to work with WooCommerce 10.4
+* New: Added QR code payment support
+* New: Added option to format and validate amounts before sending to Swish
+* New: Added option to cancel existing payment requests
+* New: Added frontend logging to backend log file
+* New: Added {order_number} and {customer_number} placeholders for transaction text
+* Fix: Improved Facebook and Instagram in-app browser detection
+
 = 3.7.5 =
 * Verified to work with WooCommerce 10.0
 * Fix: Namechange

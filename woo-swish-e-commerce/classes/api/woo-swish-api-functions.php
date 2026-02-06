@@ -32,6 +32,36 @@ class Woo_Swish_API_Functions
 
     }
 
+    private function format_swish_amount($amount)
+    {
+        $amount = trim((string) $amount);
+        $amount = str_replace(',', '.', $amount);
+        $amount = preg_replace('/[^0-9.\-]/', '', $amount);
+
+        if ($amount === '' || $amount === '-' || $amount === '.' || $amount === '-.' || $amount === '.-' || strpos($amount, '-') > 0) {
+            throw new Woo_Swish_API_Exception(__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 902);
+        }
+
+        // If multiple dots exist, treat the last as decimal separator.
+        if (substr_count($amount, '.') > 1) {
+            $last = strrpos($amount, '.');
+            $amount = str_replace('.', '', substr($amount, 0, $last)) . '.' . substr($amount, $last + 1);
+        }
+
+        $value = (float) $amount;
+        if ($value < 0) {
+            throw new Woo_Swish_API_Exception(__('Amount cannot be negative.', 'woo-swish-e-commerce'), 903);
+        }
+
+        // Round up to 2 decimals.
+        $value = ceil($value * 100) / 100;
+        if ($value < 0.01 || $value > 999999999999.99) {
+            throw new Woo_Swish_API_Exception(__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 904);
+        }
+
+        return number_format($value, 2, '.', '');
+    }
+
     /**
      * create function.
      *
@@ -48,22 +78,36 @@ class Woo_Swish_API_Functions
         $order_id = $order->get_id();
 
         $transaction_textarray = array();
+
+        $customer_number = apply_filters('woo_swish_ecommerce_user_id', $order->get_user_id(), $order);
+
         if ($this->text_on_transaction != '') {
-            $transaction_textarray[] = $this->text_on_transaction;
+            $placeholders = array(
+                '{order_number}' => (string) $order->get_order_number(),
+                '{customer_number}' => (string) $customer_number,
+            );
+
+            $placeholders = apply_filters('woo_swish_transaction_placeholders', $placeholders, $order);
+
+            $transaction_textarray[] = strtr((string) $this->text_on_transaction, $placeholders);
         }
 
         if ($this->customer_on_transaction) {
-            $customer_number = apply_filters('woo_swish_ecommerce_user_id', $order->get_user_id(), $order);
             $transaction_textarray[] = sprintf(__('Customer number %s', 'woo-swish-e-commerce'), $customer_number);
         }
 
         $transaction_text = mb_substr(preg_replace("/[^a-zA-Z0-9åäöÅÄÖ :;.,?!()]+/", "", implode(', ', $transaction_textarray)), 0, 49);
 
+        $amount = apply_filters('woo_swish_format_amount', $order->get_total(), $order);
+        if (wc_string_to_bool(WC_SEC()->get_option('swish_format_amount'))) {
+            $amount = $this->format_swish_amount($amount);
+        }
+
         $params = array(
             'payeePaymentReference' => (string) apply_filters('swish_payee_payment_reference', $this->clean_payee_payment_reference($order->get_order_number('edit')),$order),
             'callbackUrl' => (string) $callback,
             'payeeAlias' => (string) $payee_alias,
-            'amount' => (string) str_replace(',', '.', $order->get_total()),
+            'amount' => $amount,
             'currency' => (string) $order->get_currency(),
             'message' => (string) apply_filters('swish_payment_message', strlen($payer_alias) < 8 ? $payer_alias : $transaction_text, $order),
         );
@@ -88,15 +132,20 @@ class Woo_Swish_API_Functions
     /**
      * refund function.
      *
-     * Sends a 'refund' request to the Swish API
+     * Sends a 'refund' request to the Swish API (v2)
      *
      * @access public
-     * @param  int $payment_reference
-     * @param  int $amount
-     * @return void
+     * @param  string $payment_reference The paymentReference of the original payment
+     * @param  WC_Order $order
+     * @param  string $merchant_alias The Swish number of the merchant
+     * @param  float $amount The amount to refund
+     * @param  string $callback HTTPS URL for Swish to notify about the outcome
+     * @param  string $instruction_uuid Unique identifier for this refund request
+     * @param  string $reason Optional message about the refund
+     * @return object
      * @throws Woo_Swish_API_Exception
      */
-    public function refund($payment_reference, $order, $merchant_alias, $amount, $callback, $reason = '')
+    public function refund($payment_reference, $order, $merchant_alias, $amount, $callback, $instruction_uuid, $reason = '')
     {
         if ($amount === null) {
             $amount = $order->get_total();
@@ -104,18 +153,71 @@ class Woo_Swish_API_Functions
 
         $transaction_text = mb_substr(preg_replace("/[^a-zA-Z0-9åäöÅÄÖ :;.,?!()]+/", "", $reason), 0, 49);
 
+        $amount_formatted = apply_filters('woo_swish_format_amount', $amount, $order);
+        if (wc_string_to_bool(WC_SEC()->get_option('swish_format_amount'))) {
+            $amount_formatted = $this->format_swish_amount($amount_formatted);
+        }
+
         $params = array(
-            'payerPaymentReference' => (string) $order->get_order_number(),
             'originalPaymentReference' => (string) $payment_reference,
             'callbackUrl' => (string) $callback,
             'payerAlias' => (string) $merchant_alias,
-            'amount' => (string) str_replace(',', '.', $amount),
+            'amount' => $amount_formatted,
             'currency' => (string) $order->get_currency(),
-            'message' => (string) apply_filters('swish_refund_message', $transaction_text, $order),
         );
 
-        $payment = $this->post('/swish-cpcapi/api/v1/refunds', $params);
+        // Optional: Payment reference supplied by the merchant (1-35 chars, alphanumeric)
+        $payer_payment_reference = $this->clean_payee_payment_reference($order->get_order_number());
+        if (!empty($payer_payment_reference)) {
+            $params['payerPaymentReference'] = (string) $payer_payment_reference;
+        }
 
+        // Optional: Message about the refund (max 50 chars)
+        if (!empty($transaction_text)) {
+            $params['message'] = (string) apply_filters('swish_refund_message', $transaction_text, $order);
+        }
+
+        // Optional: Callback identifier for extra validation (32-36 alphanumeric chars)
+        // Using a generated UUID for each request as recommended by Swish
+        $callback_identifier = apply_filters('swish_refund_callback_identifier', wp_generate_uuid4(), $order);
+        if (!empty($callback_identifier)) {
+            $params['callbackIdentifier'] = (string) $callback_identifier;
+        }
+
+        $payment = $this->put('/swish-cpcapi/api/v2/refunds/' . $instruction_uuid, $params);
+
+        return $payment;
+    }
+
+    /**
+     * cancel function.
+     *
+     * Cancels an existing payment request via the API
+     *
+     * @access public
+     * @param  string $payment_uuid
+     * @param  WC_Order $order
+     * @return object
+     * @throws Woo_Swish_API_Exception
+     */
+    public function cancel($payment_uuid, $order = null)
+    {
+        $params = array(
+            array(
+                'op' => 'replace',
+                'path' => '/status',
+                'value' => 'cancelled'
+            )
+        );
+
+        $payment = $this->patch('/swish-cpcapi/api/v1/paymentrequests/' . $payment_uuid, $params);
+        
+        // Clear the payment UUID from the order after successful cancellation
+        if ($order) {
+            Woo_Swish_Helper::set_payment_uuid($order, '');
+            $order->save();
+        }
+        
         return $payment;
     }
 
@@ -125,6 +227,29 @@ class Woo_Swish_API_Functions
         $messages = $this->get('/swish-cpcapi/api/v1/check', $params);
         return $messages;
 
+    }
+
+    /**
+     * create_qr_code function.
+     *
+     * Creates a QR code via the Swish API
+     *
+     * @access public
+     * @param  string $token
+     * @return string
+     * @throws Woo_Swish_API_Exception
+     */
+    public function create_qr_code($token)
+    {
+        $params = array(
+            'format' => 'svg',
+            'token' => $token,
+            'border' => 4
+        );
+
+        $response = $this->post('/qrg-swish/api/v1/commerce', $params, true);
+
+        return $response;
     }
 
 }

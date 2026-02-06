@@ -19,7 +19,7 @@ class Woo_Swish_API
         throw new Woo_Swish_API_Exception("Connection not configured", 900);
     }
 
-    public function refund($payment_reference, $order, $merchant_alias, $amount, $callback, $reason = '')
+    public function refund($payment_reference, $order, $merchant_alias, $amount, $callback, $instruction_uuid, $reason = '')
     {
         throw new Woo_Swish_API_Exception("Connection not configured", 900);
     }

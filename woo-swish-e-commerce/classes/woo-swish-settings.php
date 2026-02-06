@@ -156,7 +156,7 @@ class Woo_Swish_Settings
         $settings['text_on_transaction'] = array(
             'title' => __('Text on transaction', 'woo-swish-e-commerce'),
             'type' => 'textarea',
-            'description' => __('Text that to be placed on the transaction (max 50 characters including customer number if selected above).', 'woo-swish-e-commerce'),
+            'description' => __('Text that to be placed on the transaction (max 50 characters including customer number if selected above). Supports placeholders: {order_number}, {customer_number}.', 'woo-swish-e-commerce'),
             'default' => '',
             'custom_attributes' => array(
                 'maxlength' => 50,
@@ -232,6 +232,15 @@ class Woo_Swish_Settings
                 'all' => __('Always show', 'woo-swish-e-commerce'),
             ),
         );
+        if (($gateway->get_option('swish_checkout_type') == 'seperate_internal_v2') && ($gateway->get_option('swish_enable_react_wait_page') == 'yes')) {
+            $settings['swish_qr_enabled'] = array(
+                'title' => __('Enable QR code payments', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'description' => __('If enabled, customers can pay using QR codes instead of entering their Swish number.', 'woo-swish-e-commerce'),
+                'label' => __('Enable QR code payments', 'woo-swish-e-commerce'),
+                'default' => '',
+            );
+        }
         $settings['swish_redirect_on_mobile'] = array(
             'title' => __('Redirect on mobile', 'woo-swish-e-commerce'),
             'type' => 'checkbox',
@@ -352,6 +361,14 @@ class Woo_Swish_Settings
                 'default' => '',
             );
 
+            $settings['swish_format_amount'] = array(
+                'title' => __('Format amount', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'label' => __('Enable amount formatting before sending to Swish.', 'woo-swish-e-commerce'),
+                'description' => __('When enabled, amounts will be formatted and validated before being sent to the Swish API.', 'woo-swish-e-commerce'),
+                'default' => '',
+            );
+
             $settings['swish_enable_react_wait_page'] = array(
                 'title' => __('Enable React wait page', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
@@ -359,10 +376,26 @@ class Woo_Swish_Settings
                 'default' => 'yes',
             );
 
+            $settings['swish_maybe_cancel_existing'] = array(
+                'title' => __('Cancel existing payments', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'description' => __('If enabled, existing payment requests will be cancelled before creating new ones.', 'woo-swish-e-commerce'),
+                'label' => __('Cancel existing payments', 'woo-swish-e-commerce'),
+                'default' => '',
+            );
+
             $settings['swish_service_url'] = array(
                 'title' => __('BjornTech url', 'woo-swish-e-commerce'),
                 'type' => 'text',
                 'description' => __('Do NOT use unless instructed by BjornTech.', 'woo-swish-e-commerce'),
+            );
+
+            $settings['frontend_logging'] = array(
+                'title' => __('Frontend logging', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'label' => __('Enable frontend logging to backend log file.', 'woo-swish-e-commerce'),
+                'description' => __('When enabled, frontend JavaScript logs will be sent to the backend and written to the same log file as backend logs.', 'woo-swish-e-commerce'),
+                'default' => '',
             );
 
         }

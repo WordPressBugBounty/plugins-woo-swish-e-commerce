@@ -305,9 +305,34 @@ class Woo_Swish_Helper
         return isset($_GET['redirected_from_swish']) && $_GET['redirected_from_swish'] === 'true';
     }
 
-    public static function is_m_payment($redirect_back, $improved_mobile_detection)
+    public static function is_m_payment($redirect_back, $improved_mobile_detection, $exclude_fb_insta = false)
     {   
-        return self::is_mobile($improved_mobile_detection) && $redirect_back == 'yes' && !self::is_non_standard_client();
+        return self::is_mobile($improved_mobile_detection) && $redirect_back == 'yes' && !self::is_non_standard_client($exclude_fb_insta);
+    }
+
+    public static function is_q_payment($qr_enabled, $improved_mobile_detection, $checkout_type, $react_web_page_enabled = 'yes')
+    {
+        // Check if QR code support is enabled
+        if ($qr_enabled != 'yes') {
+            return false;
+        }
+
+        // Check if we are not running on a mobile device
+        if (self::is_mobile($improved_mobile_detection)) {
+            return false;
+        }
+
+        // Check if checkout type is 'seperate_internal_v2'
+        if ($checkout_type !== 'seperate_internal_v2') {
+            return false;
+        }
+
+        // Check if react web page is enabled
+        if ($react_web_page_enabled !== 'yes') {
+            return false;
+        }
+
+        return true;
     }
 
     public static function is_mobile($improved_mobile_detection) {
@@ -350,14 +375,18 @@ class Woo_Swish_Helper
         return 'swish://';
     }
 
-    public static function is_non_standard_client() {
-        // Check for specific user agents that might indicate non-standard clients
+    public static function is_non_standard_client($exclude_fb_insta = false) {
         $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? strtolower($_SERVER['HTTP_USER_AGENT']) : '';
 
         $non_standard_clients = [
             'snapchat',
-            'instagram'
+            'Twitter'
         ];
+
+        if (!$exclude_fb_insta) {
+            $non_standard_clients[] = 'instagram';
+            $non_standard_clients[] = 'FBAN/FBIOS;FBAV';
+        }
 
         foreach ($non_standard_clients as $client) {
             if (stripos($user_agent, $client) !== false) {

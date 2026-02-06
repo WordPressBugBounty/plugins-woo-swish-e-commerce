@@ -98,10 +98,10 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
          * @access public
          * @return object
          */
-        public function post($path, $form = array())
+        public function post($path, $form = array(), $return_raw = false)
         {
             // Start the request and return the response
-            return $this->execute('POST', $path, $form);
+            return $this->execute('POST', $path, $form, $return_raw);
         }
 
         /**
@@ -112,10 +112,10 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
          * @access public
          * @return object
          */
-        public function put($path, $form = array())
+        public function put($path, $form = array(), $return_raw = false)
         {
             // Start the request and return the response
-            return $this->execute('PUT', $path, $form);
+            return $this->execute('PUT', $path, $form, $return_raw);
         }
 
         /**
@@ -126,13 +126,27 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
          * @access public
          * @return object
          */
-        public function get($path, $params)
+        public function get($path, $params, $return_raw = false)
         {
             // Start the request and return the response
-            return $this->execute('GET', $path, $params);
+            return $this->execute('GET', $path, $params, $return_raw);
         }
 
-        public function execute($method, $path, $body = null)
+        /**
+         * patch function.
+         *
+         * Performs an API PATCH request
+         *
+         * @access public
+         * @return object
+         */
+        public function patch($path, $form = array(), $return_raw = false)
+        {
+            // Start the request and return the response
+            return $this->execute('PATCH', $path, $form, $return_raw);
+        }
+
+        public function execute($method, $path, $body = null, $return_raw = false)
         {
 
             $url = 'https://' . $this->api_url . $path;
@@ -180,26 +194,36 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
             } else {
 
                 $response_body_json = wp_remote_retrieve_body($response);
-                $response_body = json_decode($response_body_json);
+                $http_code = wp_remote_retrieve_response_code($response);
 
-                if (($http_code = wp_remote_retrieve_response_code($response)) > 299) {
+                // Handle errors first - always try to decode JSON for error responses
+                if ($http_code > 299) {
+                    // Try to decode JSON to get error message, even for raw requests
+                    $decoded_response = json_decode($response_body_json);
+                    
+                    // Extract error message safely
+                    $error_message = $response_body_json; // Default to raw response
+                    if (is_object($decoded_response) && isset($decoded_response->message)) {
+                        $error_message = $decoded_response->message;
+                    } elseif (is_array($decoded_response) && !empty($decoded_response) && isset($decoded_response[0]->errorCode)) {
+                        $swish_error = $decoded_response[0];
+                        $error_message = $swish_error->errorCode . ' - ' . Woo_Swish_Helper::error_code($swish_error->errorCode);
+                    }
 
                     if ($http_code == 422 || $http_code == 403) {
-
-                        if (is_array($response_body)) {
-                            $swish_error = $response_body[0];
-                            throw new Woo_Swish_API_Exception($swish_error->errorCode . ' - ' . Woo_Swish_Helper::error_code($swish_error->errorCode), $http_code, null, $url, print_r($body, true), $response_body_json);
-                        } else {
-                            throw new Woo_Swish_API_Exception($response_body->message, $http_code, null, $url, print_r($body, true), $response_body_json);
-                        }
-
+                        throw new Woo_Swish_API_Exception($error_message, $http_code, null, $url, print_r($body, true), $response_body_json);
                     } elseif ($http_code == 401 || $http_code == 402) {
-                        throw new Woo_Swish_API_Exception($response_body->message, $http_code, null, $url, print_r($body, true), $response_body_json);
+                        throw new Woo_Swish_API_Exception($error_message, $http_code, null, $url, print_r($body, true), $response_body_json);
                     } else {
                         throw new Woo_Swish_API_Exception(__('Unknown error occured when communicating with Swish', 'woo-swish-e-commerce'), $http_code, null, $url, print_r($body, true), $response_body_json);
                     }
                 }
-                return $response_body;
+
+                // Success - return raw or decoded response based on request
+                if ($return_raw) {
+                    return $response_body_json;
+                }
+                return json_decode($response_body_json);
 
             }
 
