@@ -88,9 +88,10 @@ class Woo_Swish_Exception extends Exception
     {
         printf(
             wp_kses(
-                __("An error occured. For more information check out the <strong>%s</strong> logs inside <strong>WooCommerce -> System Status -> Logs</strong>.", 'woo-swish-e-commerce'), array('strong' => array())
+                /* translators: %s: Logger domain */
+                __("An error occurred. For more information check out the <strong>%s</strong> logs inside <strong>WooCommerce -> System Status -> Logs</strong>.", 'woo-swish-e-commerce'), array('strong' => array())
             ),
-            $this->logger->get_domain()
+            esc_html($this->logger->get_domain())
         );
     }
 }

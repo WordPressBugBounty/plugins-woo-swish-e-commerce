@@ -175,13 +175,13 @@ if (!class_exists('SWISH_UUID', false)) {
         {
             $uuid = self::$m_uuid_field;
 
-            $uuid['time_hi'] = (4 << 12) | (mt_rand(0, 0x1000));
-            $uuid['clock_seq_hi'] = (1 << 7) | mt_rand(0, 128);
-            $uuid['time_low'] = mt_rand(0, 0xffff) + (mt_rand(0, 0xffff) << 16);
-            $uuid['time_mid'] = mt_rand(0, 0xffff);
-            $uuid['clock_seq_low'] = mt_rand(0, 255);
+            $uuid['time_hi'] = (4 << 12) | (wp_rand(0, 0x1000));
+            $uuid['clock_seq_hi'] = (1 << 7) | wp_rand(0, 128);
+            $uuid['time_low'] = wp_rand(0, 0xffff) + (wp_rand(0, 0xffff) << 16);
+            $uuid['time_mid'] = wp_rand(0, 0xffff);
+            $uuid['clock_seq_low'] = wp_rand(0, 255);
             for ($i = 0; $i < 6; $i++) {
-                $uuid['node'][$i] = mt_rand(0, 255);
+                $uuid['node'][$i] = wp_rand(0, 255);
             }
 
             return ($uuid);
@@ -263,8 +263,8 @@ if (!class_exists('SWISH_UUID', false)) {
              * We don't support saved state information and generate
              * a random clock sequence each time.
              */
-            $uuid['clock_seq_hi'] = 0x80 | mt_rand(0, 64);
-            $uuid['clock_seq_low'] = mt_rand(0, 255);
+            $uuid['clock_seq_hi'] = 0x80 | wp_rand(0, 64);
+            $uuid['clock_seq_low'] = wp_rand(0, 255);
 
             /*
              * Node should be set to the 48-bit IEEE node identifier, but

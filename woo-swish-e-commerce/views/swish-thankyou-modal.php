@@ -12,10 +12,10 @@ defined('ABSPATH') || exit;
                 <span class="swish-close">&times;</span>
             </div>
             <div class="swish-messages swish-centered">
-                <h1><p id="swish-status"><?php echo $swish_status; ?></p></h1>
+                <h1><p id="swish-status"><?php echo esc_html($swish_status); ?></p></h1>
             </div>
             <div class="swish-logo swish-centered">
-                <img src="<?php echo $swish_full_logo; ?>" />
+                <img src="<?php echo esc_url($swish_full_logo); ?>" />
             </div>
             <?php do_action('swish_ecommerce_after_swish_logo', $order_id);?>
         </div>

@@ -30,6 +30,7 @@ class Woo_Swish_Helper
             'FF08' => __("PayeePaymentReference is invalid", 'woo-swish-e-commerce'),
             'RP03' => __("Callback URL is missing or does not use Https", 'woo-swish-e-commerce'),
             'BE18' => __("Payer alias is invalid", 'woo-swish-e-commerce'),
+            'AM21' => __("Transaction amount exceeds Swish limit agreed between bank and payer for given period", 'woo-swish-e-commerce'),
             'RP01' => __("Payee alias is missing or empty", 'woo-swish-e-commerce'),
             'PA02' => __("Amount value is missing or not a valid number", 'woo-swish-e-commerce'),
             'AM06' => __("Amount value is too low", 'woo-swish-e-commerce'),
@@ -223,6 +224,7 @@ class Woo_Swish_Helper
     }
 
     public static function circumvent_404() {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'wait-for-swish') !== false) {
             global $wp_query;
             $wp_query->is_404 = false;
@@ -234,7 +236,9 @@ class Woo_Swish_Helper
 
     public static function circumvent_litespeed_cache() {
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'wait-for-swish') !== false) {
+            // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Third-party LiteSpeed Cache hook
             do_action( 'litespeed_control_set_nocache', 'no-cache for wait-for-swish' );
         }
 
@@ -302,11 +306,26 @@ class Woo_Swish_Helper
     }
 
     public static function is_redirected_from_swish() {
-        return isset($_GET['redirected_from_swish']) && $_GET['redirected_from_swish'] === 'true';
+        // Check GET parameters (initial page load)
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if (isset($_GET['redirected_from_swish']) && sanitize_text_field(wp_unslash($_GET['redirected_from_swish'])) === 'true') {
+            return true;
+        }
+        // Check POST parameters (AJAX requests)
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        if (isset($_POST['redirected_from_swish']) && sanitize_text_field(wp_unslash($_POST['redirected_from_swish'])) === 'true') {
+            return true;
+        }
+        return false;
     }
 
-    public static function is_m_payment($redirect_back, $improved_mobile_detection, $exclude_fb_insta = false)
-    {   
+    public static function is_m_payment($redirect_back, $improved_mobile_detection, $checkout_type, $exclude_fb_insta = false)
+    {
+        // M-payment is only supported with the seperate_internal_v2 checkout type
+        if ($checkout_type !== 'seperate_internal_v2') {
+            return false;
+        }
+        
         return self::is_mobile($improved_mobile_detection) && $redirect_back == 'yes' && !self::is_non_standard_client($exclude_fb_insta);
     }
 
@@ -354,9 +373,11 @@ class Woo_Swish_Helper
             $mobile_detect = new WooSwishMobileDetection();
             return $mobile_detect->isMobile() && !$mobile_detect->isTablet();
         } catch (WooSwishMobileDetectException $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug logging for mobile detection issues
             error_log(sprintf('improved_mobile_detection: MobileDetectException %s', $e->getMessage()));
             return false;
         } catch (Exception $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug logging for mobile detection issues
             error_log(sprintf('improved_mobile_detection: Error %s', $e->getMessage()));
             return false;
         }
@@ -376,7 +397,8 @@ class Woo_Swish_Helper
     }
 
     public static function is_non_standard_client($exclude_fb_insta = false) {
-        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? strtolower($_SERVER['HTTP_USER_AGENT']) : '';
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? strtolower(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))) : '';
 
         $non_standard_clients = [
             'snapchat',

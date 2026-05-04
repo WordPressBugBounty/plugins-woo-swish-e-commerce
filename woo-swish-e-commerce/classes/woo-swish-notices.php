@@ -59,7 +59,7 @@ class SW_Notice
     public static function display($message, $type = 'error', $dismiss = false, $id = '')
     {
         $dismissable = $dismiss ? 'is-dismissible' : '';
-        echo '<div class="sw-notice ' . $dismissable . ' notice notice-' . $type . ' ' . $id . '"><p>' . $message . '</p></div>';
+        echo '<div class="sw-notice ' . esc_attr($dismissable) . ' notice notice-' . esc_attr($type) . ' ' . esc_attr($id) . '"><p>' . wp_kses_post($message) . '</p></div>';
     }
 
     public function check_displaylist()
@@ -80,12 +80,18 @@ class SW_Notice
 
     public function ajax_clear_notice()
     {
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
+        // Check if nonce is set and valid
+        if (!isset($_POST['nonce'])) {
+            wp_send_json_error();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish_admin')) {
             wp_send_json_error();
         }
 
         if (isset($_POST['parents'])) {
-            $id = substr($_POST['parents'], strpos($_POST['parents'], 'id-'));
+            $parents = sanitize_text_field(wp_unslash($_POST['parents']));
+            $id = substr($parents, strpos($parents, 'id-'));
             sw_notice::clear($id);
         }
 

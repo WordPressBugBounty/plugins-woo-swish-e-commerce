@@ -35,15 +35,19 @@ if (!class_exists('WC_Swish_Product_Tab', false)) {
 
         public function save_product($product_id, $post)
         {
+            // Check nonce for security - WooCommerce product meta save
+            if (!isset($_POST['woocommerce_meta_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['woocommerce_meta_nonce'])), 'woocommerce_save_data')) {
+                return;
+            }
 
-            update_post_meta($product_id, '_swish_purchase_age_limit', isset($_POST['_swish_purchase_age_limit']) ? wc_clean(wp_unslash($_POST['_swish_purchase_age_limit'])) : '');
+            update_post_meta($product_id, '_swish_purchase_age_limit', isset($_POST['_swish_purchase_age_limit']) ? sanitize_text_field(wp_unslash($_POST['_swish_purchase_age_limit'])) : '');
 
         }
 
         public function product_data_tab($tabs)
         {
             $tabs['swish'] = array(
-                'label' => __('Swish', 'woo-swish-integration'),
+                'label' => __('Swish', 'woo-swish-e-commerce'),
                 'target' => 'swish_product_data',
                 'class' => array('show_if_simple', 'show_if_variable'),
             );

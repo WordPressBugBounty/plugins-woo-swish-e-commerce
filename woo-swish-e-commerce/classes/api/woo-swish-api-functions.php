@@ -39,7 +39,8 @@ class Woo_Swish_API_Functions
         $amount = preg_replace('/[^0-9.\-]/', '', $amount);
 
         if ($amount === '' || $amount === '-' || $amount === '.' || $amount === '-.' || $amount === '.-' || strpos($amount, '-') > 0) {
-            throw new Woo_Swish_API_Exception(__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 902);
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+            throw new Woo_Swish_API_Exception(esc_html__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 902);
         }
 
         // If multiple dots exist, treat the last as decimal separator.
@@ -50,13 +51,15 @@ class Woo_Swish_API_Functions
 
         $value = (float) $amount;
         if ($value < 0) {
-            throw new Woo_Swish_API_Exception(__('Amount cannot be negative.', 'woo-swish-e-commerce'), 903);
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+            throw new Woo_Swish_API_Exception(esc_html__('Amount cannot be negative.', 'woo-swish-e-commerce'), 903);
         }
 
         // Round up to 2 decimals.
         $value = ceil($value * 100) / 100;
         if ($value < 0.01 || $value > 999999999999.99) {
-            throw new Woo_Swish_API_Exception(__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 904);
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+            throw new Woo_Swish_API_Exception(esc_html__('Invalid amount for Swish.', 'woo-swish-e-commerce'), 904);
         }
 
         return number_format($value, 2, '.', '');
@@ -93,6 +96,7 @@ class Woo_Swish_API_Functions
         }
 
         if ($this->customer_on_transaction) {
+            /* translators: %s: Customer number */
             $transaction_textarray[] = sprintf(__('Customer number %s', 'woo-swish-e-commerce'), $customer_number);
         }
 

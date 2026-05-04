@@ -1,9 +1,9 @@
 <?php
 
 /**
- * WC_Swish_Product_Age_Limit class
+ * Woo_Swish_Product_Age_Limit class
  *
- * @class        WC_Swish_Product_Age_Limit
+ * @class        Woo_Swish_Product_Age_Limit
  * @since        1.0.0
  * @package      Woocommerce_Swish/Classes
  * @author       BjornTech
@@ -11,9 +11,9 @@
 
 defined('ABSPATH') || exit;
 
-if (!class_exists('WC_Swish_Product_Age_Limit', false)) {
+if (!class_exists('Woo_Swish_Product_Age_Limit', false)) {
 
-    class WC_Swish_Product_Age_Limit
+    class Woo_Swish_Product_Age_Limit
     {
 
         public function __construct()
@@ -62,5 +62,10 @@ if (!class_exists('WC_Swish_Product_Age_Limit', false)) {
 
     }
 
-    new WC_Swish_Product_Age_Limit();
+    new Woo_Swish_Product_Age_Limit();
+
+    // Backward compatibility alias for code referencing the old class name.
+    if (!class_exists('WC_Swish_Product_Age_Limit', false)) {
+        class_alias('Woo_Swish_Product_Age_Limit', 'WC_Swish_Product_Age_Limit');
+    }
 }

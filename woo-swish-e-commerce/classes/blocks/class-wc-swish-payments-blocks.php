@@ -88,7 +88,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
         $react_wait_page = $this->get_setting('swish_enable_react_wait_page', 'yes');
 
         $exclude_fb_insta = ($checkout_type === 'seperate_internal_v2' && $react_wait_page == 'yes');
-        $is_m_payment = Woo_Swish_Helper::is_m_payment($redirect_back, $improved_mobile_detection, $exclude_fb_insta);
+        $is_m_payment = Woo_Swish_Helper::is_m_payment($redirect_back, $improved_mobile_detection, $checkout_type, $exclude_fb_insta);
         $is_q_payment = Woo_Swish_Helper::is_q_payment($qr_enabled, $improved_mobile_detection, $checkout_type, $react_wait_page);
 
         return [

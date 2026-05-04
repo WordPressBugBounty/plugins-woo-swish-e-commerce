@@ -41,7 +41,7 @@ class Woo_Swish_Log
             $this->_logger = new WC_Logger();
         }
 
-        $this->_bt_pid = rand(1, 999999);
+        $this->_bt_pid = wp_rand(1, 999999);
     }
 
     /**
@@ -71,7 +71,7 @@ class Woo_Swish_Log
     {
         if (!$this->_silent) {
             if (is_array($param)) {
-                $param = print_r($param, true);
+                $param = wp_json_encode($param);
             }
             //$this->_logger->add($this->_domain, $param);
             $this->_logger->log('info', $this->get_pid() . ' - ' . $param, array('source' => $this->get_domain()));

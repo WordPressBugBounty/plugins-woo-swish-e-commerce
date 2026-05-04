@@ -3,6 +3,8 @@
  * Template Name: Custom Wait Page Template
  */
 
+ defined( 'ABSPATH' ) || exit;
+
  ?>
 
 <!DOCTYPE html>
@@ -16,7 +18,7 @@
         wp_enqueue_style('swish-ecommerce');
 
         // Register and enqueue scripts
-        wp_register_script('waiting-for-swish-callback', WCSW_URL . 'assets/javascript/swish.js', array('jquery'), WC_SEC()->version);
+        wp_register_script('waiting-for-swish-callback', WCSW_URL . 'assets/javascript/swish.js', array('jquery'), WC_SEC()->version, false);
         wp_enqueue_script('waiting-for-swish-callback');
 
         // Localize the script

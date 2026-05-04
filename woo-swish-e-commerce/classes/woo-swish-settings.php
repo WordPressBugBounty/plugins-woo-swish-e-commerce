@@ -73,12 +73,13 @@ class Woo_Swish_Settings
             $settings['legacy_setup'] = array(
                 'type' => 'title',
                 'class' => 'swishcontent _legacy',
-                'title' => sprintf(__('Local Swish Certificate (using %s @ %s)', 'woo-swish-e-commerce'), $curlversion['ssl_version'], $_SERVER["DOCUMENT_ROOT"]),
+                /* translators: 1: SSL version, 2: Document root */
+                'title' => sprintf(__('Local Swish Certificate (using %1$s @ %2$s)', 'woo-swish-e-commerce'), $curlversion['ssl_version'], isset($_SERVER["DOCUMENT_ROOT"]) ? sanitize_text_field(wp_unslash($_SERVER["DOCUMENT_ROOT"])) : ''),
             );
             $settings['merchant_certificate'] = array(
                 'title' => __('Merchant Certificate', 'woo-swish-e-commerce') . self::get_required_symbol(),
                 'type' => 'text',
-                'default' => $_SERVER["DOCUMENT_ROOT"],
+                'default' => isset($_SERVER["DOCUMENT_ROOT"]) ? sanitize_text_field(wp_unslash($_SERVER["DOCUMENT_ROOT"])) : '',
                 'description' => __('Create a directory in a safe place on your server and place the certificate there', 'woo-swish-e-commerce'),
             );
             $settings['private_key_password'] = array(
@@ -113,12 +114,14 @@ class Woo_Swish_Settings
             $settings['service_setup'] = array(
                 'type' => 'title',
                 'class' => 'swishcontent _service',
+                /* translators: %s: Merchant alias */
                 'title' => sprintf(__('You are using Swish handel "%s" with BjornTech as Technical Supplier', 'woo-swish-e-commerce'), $merchant_alias),
             );
             $settings['btn_disconnect'] = array(
                 'title' => __('Disconnect from BjornTech as Technical Supplier', 'woo-swish-e-commerce'),
                 'text' => __('Disconnect', 'woo-swish-e-commerce'),
-                'description' => __('Swish Authorization Token: ' . $service_uuid, 'woo-swish-e-commerce'),
+                /* translators: %s: Service UUID */
+                'description' => sprintf(__('Swish Authorization Token: %s', 'woo-swish-e-commerce'), $service_uuid),
                 'type' => 'button',
             );
 
@@ -144,19 +147,21 @@ class Woo_Swish_Settings
 
         $settings['transaction_setup'] = array(
             'type' => 'title',
-            'class' => 'swishcontent _service _legacy',
+            'class' => 'swishcontent _service _legacy _service_post_connect',
             'title' => __('Transaction setup', 'woo-swish-e-commerce'),
         );
         $settings['customer_on_transaction'] = array(
             'title' => __('Add Customer number on transaction', 'woo-swish-e-commerce'),
             'type' => 'checkbox',
             'label' => __('Add the customer number in the text field of the transaction', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '',
         );
         $settings['text_on_transaction'] = array(
             'title' => __('Text on transaction', 'woo-swish-e-commerce'),
             'type' => 'textarea',
             'description' => __('Text that to be placed on the transaction (max 50 characters including customer number if selected above). Supports placeholders: {order_number}, {customer_number}.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '',
             'custom_attributes' => array(
                 'maxlength' => 50,
@@ -164,25 +169,28 @@ class Woo_Swish_Settings
         );
         $settings['shop_setup'] = array(
             'type' => 'title',
-            'class' => 'swishcontent _service _legacy _test',
+            'class' => 'swishcontent _service _legacy _test _service_post_connect',
             'title' => __('Shop setup', 'woo-swish-e-commerce'),
         );
         $settings['title'] = array(
             'title' => __('Title', 'woo-swish-e-commerce'),
             'type' => 'text',
             'description' => __('This is the title which the user sees during checkout.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => __('Swish', 'woo-swish-e-commerce'),
         );
         $settings['number_label'] = array(
             'title' => __('Mobile number label', 'woo-swish-e-commerce'),
             'type' => 'text',
             'description' => __('This is the label for the field where the customer enters their Swish (mobile) number.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => __('Swish number', 'woo-swish-e-commerce'),
         );
         $settings['number_placeholder'] = array(
             'title' => __('Mobile number placeholder', 'woo-swish-e-commerce'),
             'type' => 'text',
             'description' => __('This is the placeholder for the field where the customer enters their Swish (mobile) number.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '0731234567',
         );
         $settings['product_age_limits'] = array(
@@ -190,18 +198,21 @@ class Woo_Swish_Settings
             'type' => 'checkbox',
             'description' => __('If enabled, you can set product age limits on individual products in the new Swish tab on products.', 'woo-swish-e-commerce'),
             'label' => __('Product age limit', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '',
         );
         $settings['site_age_limit'] = array(
             'title' => __('Site age limit', 'woo-swish-e-commerce'),
             'type' => 'number',
             'description' => __('Set if you want to set an age limit to persons that should be allowed to purchase items in your shop, leave blank or set to 0 for no limit.', 'woo-swish-e-commerce'),
-            'default' => __('', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
+            'default' => '',
         );
         $settings['description'] = array(
             'title' => __('Customer Message', 'woo-swish-e-commerce'),
             'type' => 'textarea',
             'description' => __('This is the description which the user sees during checkout.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => __('Enter your Swish-number and press Process. After that you open your Swish App and authorize the payment that we sent to your app.', 'woo-swish-e-commerce'),
         );
 
@@ -210,6 +221,7 @@ class Woo_Swish_Settings
                 'title' => __('Mobile description', 'woo-swish-e-commerce'),
                 'type' => 'textarea',
                 'description' => __('This is the description which the user sees during checkout on mobile devices.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => __('Press proceed to start the payment in the Swish App. You will be redirected back to the shop after the payment is completed.', 'woo-swish-e-commerce'),
             );
         }
@@ -219,6 +231,7 @@ class Woo_Swish_Settings
             'type' => 'checkbox',
             'description' => __('If enabled, the billing number in the checkout will be reflected in the Swish number field in the checkout.', 'woo-swish-e-commerce'),
             'label' => __('Mirror billing phone number', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '',
         );
         $settings['swish_show_button'] = array(
@@ -226,6 +239,7 @@ class Woo_Swish_Settings
             'type' => 'select',
             'default' => 'mobile',
             'description' => __('The user is presented with a button to click on in order to start the Swish App if it is present on the device', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'options' => array(
                 '' => __('Never show', 'woo-swish-e-commerce'),
                 'mobile' => __('Show when Wordpress detects a mobile device', 'woo-swish-e-commerce'),
@@ -238,6 +252,7 @@ class Woo_Swish_Settings
                 'type' => 'checkbox',
                 'description' => __('If enabled, customers can pay using QR codes instead of entering their Swish number.', 'woo-swish-e-commerce'),
                 'label' => __('Enable QR code payments', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
         }
@@ -246,15 +261,17 @@ class Woo_Swish_Settings
             'type' => 'checkbox',
             'description' => __('If enabled, the customer will be redirected to the Swish app on mobile devices when the payment is initiated.', 'woo-swish-e-commerce'),
             'label' => __('Redirect on mobile', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => 'yes',
         );
 
-        if ($gateway->get_option('swish_redirect_on_mobile') == 'yes') {
+        if ($gateway->get_option('swish_redirect_on_mobile') == 'yes' && $gateway->get_option('swish_checkout_type') === 'seperate_internal_v2') {
             $settings['swish_redirect_back'] = array(
                 'title' => __('Redirect back to shop', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
-                'description' => __('If enabled, the customer will be redirected back to the shop after the payment is completed on mobile devices.', 'woo-swish-e-commerce'),
+                'description' => __('If enabled, the customer will be redirected back to the shop after the payment is completed on mobile devices. Only available with the Default checkout type.', 'woo-swish-e-commerce'),
                 'label' => __('Redirect back to shop', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
         }
@@ -264,6 +281,7 @@ class Woo_Swish_Settings
             'type' => 'select',
             'default' => 'seperate_internal_v2',
             'description' => __('Select the type of checkout you want the user to see. The modal checkout does not work with all themes.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'options' => array(
                 '' => __('Plain checkout', 'woo-swish-e-commerce'),
                 'modal' => __('Modal checkout', 'woo-swish-e-commerce'),
@@ -277,16 +295,18 @@ class Woo_Swish_Settings
             'type' => 'select',
             'default' => '',
             'description' => __('Set the preferred order state for an order that is successfully paid.', 'woo-swish-e-commerce'),
-            'options' => array(
+            'class' => '_service_post_connect',
+                'options' => array(
                 '' => __('Let WooCommerce settings decide', 'woo-swish-e-commerce'),
-                'processing' => _x('Processing', 'Order status', 'woocommerce'),
-                'completed' => _x('Completed', 'Order status', 'woocommerce'),
+                'processing' => _x('Processing', 'Order status', 'woo-swish-e-commerce'),
+                'completed' => _x('Completed', 'Order status', 'woo-swish-e-commerce'),
             ),
         );
         $settings['debug_log'] = array(
             'title' => __('Enable debug-log', 'woo-swish-e-commerce'),
             'type' => 'checkbox',
             'label' => __('Turn on logging for debug purposes.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => 'yes',
         );
 
@@ -294,6 +314,7 @@ class Woo_Swish_Settings
             'title' => __('Advanced options', 'woo-swish-e-commerce'),
             'type' => 'checkbox',
             'label' => __('Do NOT use unless instructed by BjornTech.', 'woo-swish-e-commerce'),
+            'class' => '_service_post_connect',
             'default' => '',
         );
 
@@ -302,7 +323,7 @@ class Woo_Swish_Settings
             $settings['enable_for_methods'] = array(
                 'title' => __('Enable for shipping methods', 'woo-swish-e-commerce'),
                 'type' => 'multiselect',
-                'class' => 'wc-enhanced-select',
+                'class' => 'wc-enhanced-select _service_post_connect',
                 'css' => 'width: 400px;',
                 'default' => array(),
                 'description' => __('If Swish is only available for certain methods, set it up here. Leave empty to enable for all methods.', 'woo-swish-e-commerce'),
@@ -316,6 +337,7 @@ class Woo_Swish_Settings
                 'title' => __('Shutdown processing', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check process callbacks in the "shutdown" hook.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -323,6 +345,7 @@ class Woo_Swish_Settings
                 'title' => __('Use callback', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Listen to the callback when waiting for Swish payments.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -330,6 +353,7 @@ class Woo_Swish_Settings
                 'title' => __('Poll for response', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check to use polling besides listening for callback.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -337,6 +361,7 @@ class Woo_Swish_Settings
                 'title' => __('Async queue handling', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check to use async queues when polling Swish.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -344,6 +369,7 @@ class Woo_Swish_Settings
                 'title' => __('Central callback', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check to use the BjornTech central callback.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
 
@@ -351,6 +377,7 @@ class Woo_Swish_Settings
                 'title' => __('Improved mobile detection', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check to use improved mobile detection.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -358,6 +385,7 @@ class Woo_Swish_Settings
                 'title' => __('Enable only for SEK', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Check to enable Swish only for SEK', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
 
@@ -366,6 +394,7 @@ class Woo_Swish_Settings
                 'type' => 'checkbox',
                 'label' => __('Enable amount formatting before sending to Swish.', 'woo-swish-e-commerce'),
                 'description' => __('When enabled, amounts will be formatted and validated before being sent to the Swish API.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
 
@@ -373,6 +402,7 @@ class Woo_Swish_Settings
                 'title' => __('Enable React wait page', 'woo-swish-e-commerce'),
                 'type' => 'checkbox',
                 'label' => __('Enables the React wait page', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => 'yes',
             );
 
@@ -381,6 +411,7 @@ class Woo_Swish_Settings
                 'type' => 'checkbox',
                 'description' => __('If enabled, existing payment requests will be cancelled before creating new ones.', 'woo-swish-e-commerce'),
                 'label' => __('Cancel existing payments', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
 
@@ -388,6 +419,7 @@ class Woo_Swish_Settings
                 'title' => __('BjornTech url', 'woo-swish-e-commerce'),
                 'type' => 'text',
                 'description' => __('Do NOT use unless instructed by BjornTech.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
             );
 
             $settings['frontend_logging'] = array(
@@ -395,6 +427,7 @@ class Woo_Swish_Settings
                 'type' => 'checkbox',
                 'label' => __('Enable frontend logging to backend log file.', 'woo-swish-e-commerce'),
                 'description' => __('When enabled, frontend JavaScript logs will be sent to the backend and written to the same log file as backend logs.', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
                 'default' => '',
             );
 
@@ -436,14 +469,16 @@ class Woo_Swish_Settings
 
         if (!empty($error_fields)) {
             $message = sprintf('<h2>%s</h2>', __("WooCommerce Swish e-commerce", 'woo-swish-e-commerce'));
+            /* translators: %s: Settings page URL */
             $message .= sprintf('<p>%s</p>', sprintf(__('You have missing or incorrect settings. Go to the <a href="%s">settings page</a>.', 'woo-swish-e-commerce'), self::get_settings_page_url()));
             $message .= '<ul>';
             foreach ($error_fields as $error_field) {
+                /* translators: %s: Field name */
                 $message .= "<li>" . sprintf(__('<strong>%s</strong> is mandatory.', 'woo-swish-e-commerce'), $error_field) . "</li>";
             }
             $message .= '</ul>';
 
-            printf('<div class="%s">%s</div>', 'notice notice-error', $message);
+            printf('<div class="%s">%s</div>', 'notice notice-error', wp_kses_post($message));
         }
     }
 
@@ -456,6 +491,7 @@ class Woo_Swish_Settings
     {
         $post_key = 'woocommerce_swish_' . $settings_field;
         $setting_key = WC_SEC()->get_option($settings_field);
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- This is a helper function, nonce is checked by WooCommerce
         return empty($_POST[$post_key]) && empty($setting_key);
 
     }

@@ -1055,7 +1055,7 @@ class WooSwishMobileDetection
         $httpHeaders = [];
         foreach ($knownHttpHeaders as $headerName) {
             if (isset($_SERVER[$headerName])) {
-                $httpHeaders[$headerName] = $_SERVER[$headerName];
+                $httpHeaders[$headerName] = sanitize_text_field(wp_unslash($_SERVER[$headerName]));
             }
         }
         $this->setHttpHeaders($httpHeaders);
@@ -1341,7 +1341,7 @@ class WooSwishMobileDetection
     {
         // make sure the name starts with 'is', otherwise
         if (!str_starts_with($name, 'is')) {
-            throw new BadMethodCallException("No such method exists: $name");
+            throw new BadMethodCallException(esc_html(sprintf('No such method exists: %s', $name)));
         }
 
         $ruleName = substr($name, 2);

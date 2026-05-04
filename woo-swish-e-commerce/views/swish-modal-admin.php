@@ -13,7 +13,7 @@ defined('ABSPATH') || exit;
                 <h1><p id="swish-status"></p></h1>
             </div>
             <div class="bjorntech-logo swish-centered">
-                <img id="swish-logo-id" class="swish-centered" src="<?php echo $bjorntech_logo; ?>" />
+                <img id="swish-logo-id" class="swish-centered" src="<?php echo esc_url($bjorntech_logo); ?>" />
             </div>
         </div>
     </div>

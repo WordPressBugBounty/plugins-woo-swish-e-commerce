@@ -117,6 +117,7 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
 
         public function additional_curlopt($curlopt_option, $key)
         {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, $key, $curlopt_option);
         }
 
@@ -135,6 +136,7 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
         {
 
             // Require TLS 1.2
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
 
             // Filter to handle additional curlopt
@@ -143,28 +145,36 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
             }
 
             // Set the HTTP request type
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, CURLOPT_CUSTOMREQUEST, $request_type);
 
             // Prepare to post the data string
             $data_string = json_encode($form, JSON_UNESCAPED_SLASHES);
 
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, CURLOPT_POSTFIELDS, $data_string);
 
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, CURLOPT_HTTPHEADER, array(
                 'Content-Type: application/json',
                 'Content-Length: ' . strlen($data_string))
             );
             // Execute the request and decode the response to JSON
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_exec -- Legacy API requires cURL
             $curlResponse = curl_exec($this->ch);
 
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_getinfo -- Legacy API requires cURL
             $response_code = (int) curl_getinfo($this->ch, CURLINFO_HTTP_CODE);
             $response_data = stripslashes($curlResponse);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_getinfo -- Legacy API requires cURL
             $curl_request_url = curl_getinfo($this->ch, CURLINFO_EFFECTIVE_URL);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_getinfo -- Legacy API requires cURL
             $curl_fullinfo = curl_getinfo($this->ch);
 
-            if ($curlResponse === false) {
-                $curlError = curl_error($this->ch);
-                throw new Woo_Swish_API_Exception((string) json_encode($curlError), 900, null, $curl_request_url, $data_string, $response_data);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_error -- Legacy API requires cURL
+            if ($curlError = curl_error($this->ch)) {
+                // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Data parameters are used for internal logging only
+                throw new Woo_Swish_API_Exception(esc_html($curlError), 900, null, $curl_request_url, $data_string, $response_data);
             } else {
                 $this->resource_data = json_decode($curlResponse);
             }
@@ -176,9 +186,11 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
             if ($response_code > 299) {
                 if ($response_code == 422) {
                     $swish_error = json_decode($curlResponse)[0];
-                    throw new Woo_Swish_API_Exception($swish_error->errorCode . ' - ' . Woo_Swish_Helper::error_code($swish_error->errorCode), $response_code, null, $curl_request_url, $data_string, $response_data);
+                    // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Error code is sanitized by Swish API
+                    throw new Woo_Swish_API_Exception(esc_html($swish_error->errorCode) . ' - ' . esc_html(Woo_Swish_Helper::error_code($swish_error->errorCode)), $response_code, null, $curl_request_url, $data_string, $response_data);
                 } else {
-                    throw new Woo_Swish_API_Exception($response_data, $response_code, null, $curl_request_url, $data_string, $response_data);
+                    // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Response data is sanitized before output
+                    throw new Woo_Swish_API_Exception(esc_html($response_data), $response_code, null, $curl_request_url, $data_string, $response_data);
                 }
             }
 
@@ -195,6 +207,7 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
          */
         public function set_url($params)
         {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
             curl_setopt($this->ch, CURLOPT_URL, $this->api_url . $params);
         }
 
@@ -210,15 +223,21 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
         {
 
             if ($this->ch === null) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_init -- Legacy API requires cURL
                 $this->ch = curl_init();
                 //  curl_setopt($this->ch, CURLOPT_HEADER, true);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
                 curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
                 curl_setopt($this->ch, CURLOPT_SSL_VERIFYPEER, true);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
                 curl_setopt($this->ch, CURLOPT_SSLCERT, $this->merchant_certificate);
                 if (strtoupper(substr($this->merchant_certificate, -3)) == 'P12') {
+                    // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
                     curl_setopt($this->ch, CURLOPT_SSLCERTTYPE, "P12");
                 }
                 if (strlen($this->private_key_password) > 0) {
+                    // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- Legacy API requires cURL
                     curl_setopt($this->ch, CURLOPT_SSLKEYPASSWD, $this->private_key_password);
                 }
             }
@@ -260,6 +279,7 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
         public function shutdown()
         {
             if (!empty($this->ch)) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_close -- Legacy API requires cURL
                 curl_close($this->ch);
             }
         }

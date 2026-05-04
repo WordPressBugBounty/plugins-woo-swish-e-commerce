@@ -65,7 +65,8 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
                     $error = $response->get_error_message($code);
 
-                    throw new Woo_Swish_API_Exception($error, 0, null, $url, $body);
+                    // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Error message is escaped before output
+                    throw new Woo_Swish_API_Exception(esc_html($error), 0, null, $url, $body);
 
                 } else {
 
@@ -73,7 +74,8 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
                     if (($http_code = wp_remote_retrieve_response_code($response)) != 200) {
 
-                        throw new Woo_Swish_API_Exception($response_body->error, $http_code, null, $url, $body, $response);
+                        // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Error is escaped before output
+                        throw new Woo_Swish_API_Exception(esc_html($response_body->error), $http_code, null, $url, $body, $response);
 
                     }
 
@@ -158,10 +160,12 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                     $body = null;
                 } else {
 
+                    $body_data = $body; // Preserve original data for error reporting
                     $body = json_encode($body, JSON_UNESCAPED_SLASHES);
 
                     if ($body === false) {
-                        throw new Woo_Swish_API_Exception(__('Error when creating Swish request', 'woo-swish-e-commerce'), 999, null, $url, print_r($body, true));
+                        // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- URL and body data are used for internal logging only
+                        throw new Woo_Swish_API_Exception(esc_html(__('Error when creating Swish request', 'woo-swish-e-commerce')), 999, null, $url, wp_json_encode($body_data));
                     }
 
                 }
@@ -186,10 +190,11 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
             if (is_wp_error($response)) {
 
                 $code = $response->get_error_code();
-                WC_SEC()->logger->add(print_r($code, true));
+                WC_SEC()->logger->add($code);
                 $error = $response->get_error_message($code);
-                WC_SEC()->logger->add(print_r($error, true));
-                throw new Woo_Swish_API_Exception($error, $code, null, $url);
+                WC_SEC()->logger->add($error);
+                // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+                throw new Woo_Swish_API_Exception(esc_html($error), $code, null, $url);
 
             } else {
 
@@ -211,11 +216,14 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                     }
 
                     if ($http_code == 422 || $http_code == 403) {
-                        throw new Woo_Swish_API_Exception($error_message, $http_code, null, $url, print_r($body, true), $response_body_json);
+                        // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+                        throw new Woo_Swish_API_Exception(esc_html($error_message), $http_code, null, $url, wp_json_encode($body), $response_body_json);
                     } elseif ($http_code == 401 || $http_code == 402) {
-                        throw new Woo_Swish_API_Exception($error_message, $http_code, null, $url, print_r($body, true), $response_body_json);
+                        // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+                        throw new Woo_Swish_API_Exception(esc_html($error_message), $http_code, null, $url, wp_json_encode($body), $response_body_json);
                     } else {
-                        throw new Woo_Swish_API_Exception(__('Unknown error occured when communicating with Swish', 'woo-swish-e-commerce'), $http_code, null, $url, print_r($body, true), $response_body_json);
+                        // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+                        throw new Woo_Swish_API_Exception(esc_html(__('Unknown error occurred when communicating with Swish', 'woo-swish-e-commerce')), $http_code, null, $url, wp_json_encode($body), $response_body_json);
                     }
                 }
 

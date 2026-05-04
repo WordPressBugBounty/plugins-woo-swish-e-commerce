@@ -5,14 +5,14 @@
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.7.7
+ * Version: 3.7.8
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
  * Text Domain: woo-swish-e-commerce
  *
  * WC requires at least: 4.0
- * WC tested up to: 10.4
+ * WC tested up to: 10.7
  *
  * Copyright:         2018-2020 BjornTech AB
  * License:           GNU General Public License v3.0
@@ -21,7 +21,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.7.7');
+define('WCSW_VERSION', '3.7.8');
 define('WCSW_URL', plugin_dir_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
@@ -55,6 +55,9 @@ class Swish_Commerce_Payments
 
         // Declare HPOS compatible
         add_action('before_woocommerce_init', array(__CLASS__, 'declare_hpos_compatible'));
+
+        // Register Swish protocol for URL validation
+        add_filter('kses_allowed_protocols', array(__CLASS__, 'add_swish_protocol'));
 
         // Upgrade hook
         add_action('upgrader_process_complete', array(__CLASS__, 'swish_upgrade_completed'), 10, 2);
@@ -212,6 +215,23 @@ class Swish_Commerce_Payments
     }
 
     /**
+     * Add Swish protocol to allowed protocols for URL validation.
+     *
+     * This allows esc_url() and other WordPress URL sanitization functions
+     * to properly handle swish:// URLs without stripping the protocol.
+     *
+     * @access public
+     * @static
+     * @param array $protocols Array of allowed protocols.
+     * @return array Modified array of allowed protocols.
+     */
+    public static function add_swish_protocol($protocols)
+    {
+        $protocols[] = 'swish';
+        return $protocols;
+    }
+
+    /**
      * Activation activities to be performed then the plugin is activated
      */
     public static function woocommerce_swish_integration_activate()
@@ -220,7 +240,7 @@ class Swish_Commerce_Payments
         /**
          * Log the activation time in a transient
          */
-        set_site_transient('swish_activation_time', date('c'));
+        set_site_transient('swish_activation_time', wp_date('c'));
 
         /**
          * Set transient to always force the plugin to ask for credentials when activated
@@ -244,7 +264,7 @@ class Swish_Commerce_Payments
                     /**
                      * Log the activation time in a transient
                      */
-                    set_site_transient('swish_upgraded_time', date('c'));
+                    set_site_transient('swish_upgraded_time', wp_date('c'));
 
                     /**
                      * Set transient to always force the plugin to ask for credentials when activated
@@ -269,6 +289,7 @@ Swish_Commerce_Payments::init();
  *
  * @return WC_Payment_Gateway_Swish
  */
+// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedFunctionFound -- Legacy function name maintained for backward compatibility
 function WC_SEC()
 {
     return Swish_Commerce_Payments::get_instance();

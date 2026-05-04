@@ -1,9 +1,22 @@
 var show_admin_modal = false
 
 jQuery(function ($) {
-  $(document).ready(function() {
+  function toggleServiceFields() {
     var selected = $('#woocommerce_swish_connection_type').val();
-    if (selected) { $('.' + selected).show(); }
+    $('.swishcontent').hide();
+    if (selected) {
+      if (selected === '_service' && !swish_admin.service_connected) {
+        // Service selected but not connected - show only pre-connection fields
+        $('._service:not(._service_post_connect)').show();
+      } else {
+        // Show all fields for the selected connection type
+        $('.' + selected).show();
+      }
+    }
+  }
+
+  $(document).ready(function() {
+    toggleServiceFields();
   });
 
   $('#woocommerce_swish_btn_connect').on('click', function (e) {
@@ -50,16 +63,12 @@ jQuery(function ($) {
   })
 
   $('#woocommerce_swish_connection_type').on('change', function (e) {
-    $('.swishcontent').hide()
-    var selected = $('#woocommerce_swish_connection_type').val()
-    if (selected) { $('.' + selected).show() }
-  })
+    toggleServiceFields();
+  });
 
   $(window).load(function () {
-    $('.swishcontent').hide()
-    var selected = $('#woocommerce_swish_connection_type').val()
-    if (selected) { $('.' + selected).show() }
-  })
+    toggleServiceFields();
+  });
 
   $('.swish-close').on('click', function (e) {
     var modal = document.getElementById('swish-modal-admin-id')

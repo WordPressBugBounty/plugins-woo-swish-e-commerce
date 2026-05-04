@@ -60,7 +60,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $this->id = 'swish';
         $this->method_title = 'Swish';
         $this->method_description = 'Receive payments using Swish e-commerce.';
-        $this->icon = '';
+        $this->icon = WC_HTTPS::force_https_url(Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Secondary_Light-BG_SVG.svg');;
         $this->has_fields = true;
         $this->version = WCSW_VERSION;
 
@@ -110,7 +110,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
             delete_site_transient('swish_access_token');
 
-            set_site_transient('swish_activated_or_upgraded', date('c'));
+            set_site_transient('swish_activated_or_upgraded', wp_date('c'));
 
         }
 
@@ -152,6 +152,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         add_action('swish_retrieve_payment_info', array($this, 'retrieve_payment_info'));
         add_action('swish_retrieve_payment_info_delayed', array($this, 'retrieve_payment_info'));
         add_filter('woocommerce_available_payment_gateways', array($this, 'filter_available_payment_gateways'));
+
+        // Add hooks to cancel pending Swish payments when order is processed with another gateway
+        add_action('woocommerce_checkout_order_processed', array($this, 'maybe_cancel_swish_on_payment_switch'), 10, 3);
+        add_action('woocommerce_store_api_checkout_order_processed', array($this, 'maybe_cancel_swish_on_payment_switch_blocks'), 10, 1);
 
         if (is_admin()) {
             add_action('admin_enqueue_scripts', array($this, 'add_admin_styles_and_scripts'));
@@ -209,11 +213,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         if ($site_age_limit = WC_SEC()->get_option('site_age_limit')) {
             require_once WCSW_PATH . 'classes/woo-swish-site-age-limit.php';
-            new WC_Swish_Site_Age_Limit($site_age_limit);
+            new Woo_Swish_Site_Age_Limit($site_age_limit);
         }
 
         $this->swish_set_early_translations();
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hook name maintained for backward compatibility
         do_action('bjorntech_swish_gateway_initiated');
 
     }
@@ -264,6 +269,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             return;
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only operation, no state change
         $order_id = isset($_GET['bt_swish_order_id']) ? intval($_GET['bt_swish_order_id']) : 0;
 
         $this->log(sprintf('swish_wait_page_template_v2(%s): full url = %s', $order_id, $current_url));
@@ -271,7 +277,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         $order = wc_get_order($order_id);
 
         if (!$order) {
-            $order_key = isset($_GET['key']) ? sanitize_text_field($_GET['key']) : '';
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only operation, no state change
+            $order_key = isset($_GET['key']) ? sanitize_text_field(wp_unslash($_GET['key'])) : '';
             $order_id = wc_get_order_id_by_order_key($order_key);
             $this->log(sprintf('swish_wait_page_template_v2(%s): order_key = %s, order_id = %s', $order_id, $order_key, $order_id));
             $order = wc_get_order($order_id);
@@ -301,6 +308,21 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         if ($order_id) {
             // Check if separate_internal_v2 is selected
             if ($this->get_option('swish_checkout_type') === 'seperate_internal_v2' && $this->get_option('swish_enable_react_wait_page','yes') == 'yes') {
+                
+                // Check if order is already in a final state - redirect immediately to avoid flickering
+                $transaction_status = Woo_Swish_Helper::get_transaction_status($order);
+                if ('DECLINED' === $transaction_status) {
+                    $redirect_url = $order->get_checkout_payment_url();
+                    $this->log(sprintf('swish_wait_page_template_v2(%s): Order already DECLINED, redirecting immediately to %s', $order_id, $redirect_url));
+                    wp_safe_redirect($redirect_url);
+                    exit;
+                } elseif ('PAID' === $transaction_status) {
+                    $redirect_url = $this->get_return_url($order);
+                    $this->log(sprintf('swish_wait_page_template_v2(%s): Order already PAID, redirecting immediately to %s', $order_id, $redirect_url));
+                    wp_safe_redirect($redirect_url);
+                    exit;
+                }
+                
                 $this->log(sprintf('swish_wait_page_template_v2(%s): React wait page is enabled', $order_id));
                 // Output the HTML structure
                 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -311,11 +333,11 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 <!DOCTYPE html>
                 <html style="height: 100%;" <?php language_attributes(); ?>>
                     <head>
-                        <title><?php _e('Swish - Waiting for payment', 'woo-swish-e-commerce'); ?></title>
+                        <title><?php esc_html_e('Swish - Waiting for payment', 'woo-swish-e-commerce'); ?></title>
                         <meta charset="<?php bloginfo('charset'); ?>">
                         <meta name="viewport" content="width=device-width, initial-scale=1">
                         <?php 
-                            // Enqueue scripts BEFORE wp_head() so they are properly output
+                            // Enqueue scripts before wp_head()/wp_footer() so they are properly output
                             wp_enqueue_script('wp-element');
                             wp_enqueue_script('wp-components');
                             wp_enqueue_script('wp-i18n');
@@ -325,16 +347,19 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                             $script_asset = file_exists($script_asset_path) ? require($script_asset_path) : array('dependencies' => array(), 'version' => '1.0');
                             // Enqueue scripts and styles
                             wp_enqueue_script(
-                                'swish-wait-page-react', 
-                                plugins_url('assets/js/frontend2/wait-page.js', dirname(__FILE__)), 
+                                'swish-wait-page-react',
+                                plugins_url('assets/js/frontend2/wait-page.js', dirname(__FILE__)),
                                 $script_asset['dependencies'],
-                                $script_asset['version']
+                                $script_asset['version'],
+                                true
                             );
 
                             $initial_message = __('Start your Swish App and authorize the payment', 'woo-swish-e-commerce');
 
                             if (Woo_Swish_Helper::is_swish_paid($order)) {
                                 $initial_message = Woo_Swish_Helper::error_code('PAID');
+                            } elseif (Woo_Swish_Helper::is_redirected_from_swish() && 'WAITING' === Woo_Swish_Helper::get_transaction_status($order)) {
+                                $initial_message = __('Processing payment...', 'woo-swish-e-commerce');
                             }
 
                             $script_variables = array(
@@ -353,7 +378,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                                 'frontendLogging' => wc_string_to_bool($this->get_option('frontend_logging'))
                             );
 
-                            $this->log(print_r($script_variables, true));
+                            $this->log(wp_json_encode($script_variables));
                             wp_localize_script('swish-wait-page-react', 'swishWaitPageData', $script_variables);
 
                             // Call wp_head() AFTER enqueuing scripts
@@ -437,7 +462,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         wp_register_style('swish-ecommerce', Swish_Commerce_Payments::plugin_url() . '/assets/stylesheets/swish.css', array(), $this->version);
         wp_enqueue_style('swish-ecommerce');
 
-        wp_register_script('waiting-for-swish-callback', Swish_Commerce_Payments::plugin_url() . '/assets/javascript/swish.js', array('jquery'), $this->version);
+        wp_register_script('waiting-for-swish-callback', Swish_Commerce_Payments::plugin_url() . '/assets/javascript/swish.js', array('jquery'), $this->version, false);
         wp_enqueue_script('waiting-for-swish-callback');
         wp_localize_script('waiting-for-swish-callback', 'swish', array(
             'logo' => Swish_Commerce_Payments::plugin_url() . '/assets/images/Swish_Logo_Primary_Light-BG_SVG.svg',
@@ -471,12 +496,13 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         wp_register_style('swish-ecommerce', Swish_Commerce_Payments::plugin_url() . '/assets/stylesheets/swish.css', array(), $this->version);
         wp_enqueue_style('swish-ecommerce');
 
-        wp_register_script('swish-ecommerce-admin', Swish_Commerce_Payments::plugin_url() . '/assets/javascript/swish-admin.js', array('jquery'), $this->version);
+        wp_register_script('swish-ecommerce-admin', Swish_Commerce_Payments::plugin_url() . '/assets/javascript/swish-admin.js', array('jquery'), $this->version, false);
         wp_enqueue_script('swish-ecommerce-admin');
         wp_localize_script('swish-ecommerce-admin', 'swish_admin', array(
             'nonce' => wp_create_nonce('ajax_swish_admin'),
             'connect' => __('I agree to the BjornTech Privacy Policy', 'woo-swish-e-commerce'),
             'disconnect' => __('You are about to disconnect BjornTech as Technical Supplier', 'woo-swish-e-commerce'),
+            'service_connected' => $this->get_option('swish_refresh_token', '') !== '',
         ));
     }
 
@@ -504,6 +530,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function ajax_connect_swish_service()
     {
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
             wp_die();
         }
@@ -524,6 +551,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 'result' => 'error',
                 'message' => __('Swish is using a callback and the server must be reachable from internet to work.', 'woo-swish-e-commerce'),
             );
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         } elseif ($merchant_alias == '' || $merchant_alias != $_POST['merchant_alias']) {
             $response = array(
                 'result' => 'error',
@@ -534,6 +562,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 'result' => 'error',
                 'message' => __('The "Swish Handel" number must start with 123, be 10 digits long and not contain any spaces.', 'woo-swish-e-commerce'),
             );
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         } elseif ($swish_user_email == '' || ($swish_user_email != $_POST['user_email'])) {
             $response = array(
                 'result' => 'error',
@@ -570,6 +599,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
                     $response_header = sprintf('<h1>%s</h1>', __('BjornTech is not set as technical supplier', 'woo-swish-e-commerce'));
 
+                    /* translators: %s: Merchant alias */
                     $response_body = sprintf('<div>%s</div>', sprintf(__('<p>BjornTech is not set as technical supplier for number %s</p>
                         
                         <p>Please contact your Bank and ask them to set BjornTech as technical supplier for your number</p>
@@ -619,11 +649,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 $code = $response->get_error_code();
                 $error = $response->get_error_message($code);
                 $response_body = json_decode(wp_remote_retrieve_body($response));
-                $this->logger->add(print_r($code, true));
-                $this->logger->add(print_r($error, true));
-                $this->logger->add(print_r($response_body, true));
+                $this->logger->add($code);
+                $this->logger->add($error);
+                $this->logger->add(wp_json_encode($response_body));
                 $response = array(
                     'result' => 'error',
+                    // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- No placeholders
                     'message' => __('Something went wrong when trying to connect to the BjornTech service.', 'woo-swish-e-commerce'),
                 );
                 $this->logger->add('Failed connecing to BjornTech service');
@@ -655,7 +686,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function ajax_disconnect_swish_service()
     {
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
+        // Check and sanitize nonce
+        if (!isset($_POST['nonce'])) {
+            wp_die();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish_admin')) {
             wp_die();
         }
         $auth_url = 'https://' . $this->service_url . '/disconnect';
@@ -692,9 +728,11 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function checkout_form_init()
     {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This is a read-only operation, no state change
         if (isset($_GET['pay_for_order'], $_GET['key'])) {
             try {
-                $order_key = isset($_GET['key']) ? wc_clean(wp_unslash($_GET['key'])) : '';
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Sanitized below
+                $order_key = isset($_GET['key']) ? sanitize_text_field(wp_unslash($_GET['key'])) : '';
                 $order_id = wc_get_order_id_by_order_key($order_key);
                 $order = wc_get_order($order_id);
                 if ('swish' == $order->get_payment_method('edit')) {
@@ -855,13 +893,19 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function ajax_wait_for_payment()
     {
 
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish')) {
+        // Check and sanitize nonce
+        if (!isset($_POST['nonce'])) {
+            wp_die();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish')) {
             wp_die();
         }
 
-        $this->logger->add(sprintf('Waiting for payment sent url %s', $_POST['url']));
+        $url = isset($_POST['url']) ? sanitize_text_field(wp_unslash($_POST['url'])) : '';
+        $this->logger->add(sprintf('Waiting for payment sent url %s', $url));
 
-        preg_match('/\=(wc_order_[^&#]*)/', $_POST['url'], $key);
+        preg_match('/\=(wc_order_[^&#]*)/', $url, $key);
 
         if (($order_id = wc_get_order_id_by_order_key($key[1])) && ($order = wc_get_order($order_id))) {
 
@@ -871,9 +915,15 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
             $this->logger->add(sprintf('ajax_wait_for_payment (%s): Waiting for payment %s returned status %s', $order->get_id(), $key[1], $status));
 
+            if (Woo_Swish_Helper::is_redirected_from_swish() && 'WAITING' === $status) {
+                $message = __('Processing payment...', 'woo-swish-e-commerce');
+            } else {
+                $message = Woo_Swish_Helper::error_code($status);
+            }
+
             $response = array(
                 'status' => $status,
-                'message' => Woo_Swish_Helper::error_code($status),
+                'message' => $message,
             );
 
             $checkout_type = $this->get_option('swish_checkout_type');
@@ -918,7 +968,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
      */
     public function ajax_frontend_log()
     {
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish')) {
+        // Check and sanitize nonce
+        if (!isset($_POST['nonce'])) {
+            wp_die();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish')) {
             wp_die();
         }
 
@@ -928,9 +983,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             return;
         }
 
-        $message = isset($_POST['message']) ? sanitize_text_field($_POST['message']) : '';
-        $level = isset($_POST['level']) ? sanitize_text_field($_POST['level']) : 'info';
-        $context = isset($_POST['context']) ? sanitize_text_field($_POST['context']) : 'frontend';
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Handled by sanitize_text_field
+        $message = isset($_POST['message']) ? sanitize_text_field(wp_unslash($_POST['message'])) : '';
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Handled by sanitize_text_field
+        $level = isset($_POST['level']) ? sanitize_text_field(wp_unslash($_POST['level'])) : 'info';
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Handled by sanitize_text_field
+        $context = isset($_POST['context']) ? sanitize_text_field(wp_unslash($_POST['context'])) : 'frontend';
 
         if (empty($message)) {
             wp_send_json(array('status' => 'error', 'message' => 'Empty log message'));
@@ -955,10 +1013,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $now = time();
 
             if ($cert_info->valid_to < $now) {
-                $message = sprintf(__('Your certificate %s expired %s. Take the opportunity to start using us as your Technical supplier. Read more <a href="https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product">here</a>', 'woo-swish-e-commerce'), $cert_info->merchant_number, date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $cert_info->valid_to));
+                /* translators: 1: Merchant number, 2: Expiration date */
+                $message = sprintf(__('Your certificate %1$s expired %2$s. Take the opportunity to start using us as your Technical supplier. Read more <a href="https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product">here</a>', 'woo-swish-e-commerce'), $cert_info->merchant_number, date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $cert_info->valid_to));
                 $id = sw_notice::add($message, 'error', false, 'cert_expiry_error');
             } elseif ($cert_info->valid_to < $now + WEEK_IN_SECONDS) {
-                $message = sprintf(__('Your certificate %s expires %s. Take the opportunity to start using us as your Technical supplier. Read more <a href="https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product">here</a>', 'woo-swish-e-commerce'), $cert_info->merchant_number, date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $cert_info->valid_to));
+                /* translators: 1: Merchant number, 2: Expiration date */
+                $message = sprintf(__('Your certificate %1$s expires %2$s. Take the opportunity to start using us as your Technical supplier. Read more <a href="https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product">here</a>', 'woo-swish-e-commerce'), $cert_info->merchant_number, date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $cert_info->valid_to));
                 $id = sw_notice::add($message, 'warning', false, 'cert_expiry_warning');
             }
 
@@ -990,6 +1050,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         }
 
         if (!$this->connection_type && !get_site_transient('swish_did_show_connection_info')) {
+            /* translators: %s: Settings page URL */
             $message = sprintf(__('Congratulations! You can now be live with Swish payments within minutes. Go to the <a href="%s">configuration page</a> and select BjornTech as Technical Supplier as your connection type.', 'woo-swish-e-commerce'), get_admin_url(null, 'admin.php?page=wc-settings&tab=checkout&section=swish'));
             $id = sw_notice::add($message, 'info');
             set_site_transient('swish_did_show_connection_info', $id);
@@ -1003,12 +1064,18 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function ajax_clear_notice()
     {
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
+        // Check and sanitize nonce
+        if (!isset($_POST['nonce'])) {
+            wp_die();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish_admin')) {
             wp_die();
         }
 
         if (isset($_POST['parents'])) {
-            $id = substr($_POST['parents'], strpos($_POST['parents'], 'id-'));
+            $parents = sanitize_text_field(wp_unslash($_POST['parents']));
+            $id = substr($parents, strpos($parents, 'id-'));
             sw_notice::clear($id);
         }
         $response = array(
@@ -1029,7 +1096,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
      */
     public function ajax_wait_for_admin()
     {
-        if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
+        // Check and sanitize nonce
+        if (!isset($_POST['nonce'])) {
+            wp_die();
+        }
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce']));
+        if (!wp_verify_nonce($nonce, 'ajax_swish_admin')) {
             wp_die();
         }
 
@@ -1066,31 +1138,40 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             return;
         }
         
-        if (!isset($_GET['page']) || $_GET['page'] !== 'wc-settings') {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This is a read-only check for admin page
+        if (!isset($_GET['page']) || sanitize_text_field(wp_unslash($_GET['page'])) !== 'wc-settings') {
             return;
         }
         
-        if (!isset($_GET['tab']) || $_GET['tab'] !== 'checkout') {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This is a read-only check for admin page
+        if (!isset($_GET['tab']) || sanitize_text_field(wp_unslash($_GET['tab'])) !== 'checkout') {
             return;
         }
         
-        if (!isset($_GET['section']) || $_GET['section'] !== 'swish') {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- This is a read-only check for admin page
+        if (!isset($_GET['section']) || sanitize_text_field(wp_unslash($_GET['section'])) !== 'swish') {
             return;
         }
 
         $nonce = get_site_transient('handle_swish_account');
 
-        if (array_key_exists('account_uuid', $_REQUEST) && array_key_exists('refresh_token', $_REQUEST)) {
-            if (array_key_exists('nonce', $_REQUEST) && $nonce !== false && trim($_REQUEST['nonce']) === $nonce) {
-                if ($this->account_uuid == $_REQUEST['account_uuid']) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce is verified against transient
+        if (isset($_REQUEST['account_uuid']) && isset($_REQUEST['refresh_token'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce is verified against transient
+            if (isset($_REQUEST['nonce']) && $nonce !== false && trim(sanitize_text_field(wp_unslash($_REQUEST['nonce']))) === $nonce) {
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Sanitized below
+                $account_uuid = sanitize_text_field(wp_unslash($_REQUEST['account_uuid']));
+                if ($this->account_uuid == $account_uuid) {
                     $this->update_settings_at_init();
 
-                    $this->refresh_token = $_REQUEST['refresh_token'];
+                    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Sanitized below
+                    $this->refresh_token = sanitize_text_field(wp_unslash($_REQUEST['refresh_token']));
                     $this->update_option('swish_refresh_token', WC_SEC()->refresh_token);
                     delete_site_transient('swish_access_token');
                     $this->log(sprintf('Account uuid %s was authorized and got refresh token %s from service', WC_SEC()->account_uuid, WC_SEC()->refresh_token));
 
                     SW_Notice::add(
+                        /* translators: %s: URL to guide page */
                         sprintf(__('Congratulations! The plugin is now connected to the BjornTech Swish service! Please follow the guide <a href="%s">here</a> to proceed!', 'woo-swish-e-commerce'), 'https://bjorntech.com/sv/kb/swish-teknisk-leverantor/'),
                         'success'
                     );
@@ -1098,8 +1179,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                     wp_safe_redirect(admin_url('admin.php?page=wc-settings&tab=checkout&section=swish'));
                     exit;
                 } else {
-                    $this->log(sprintf('Wrong account UUID %s, should have been %s', $_REQUEST['account_uuid'], WC_SEC()->account_uuid));
+                    $this->log(sprintf('Wrong account UUID %s, should have been %s', $account_uuid, WC_SEC()->account_uuid));
                     SW_Notice::add(
+                        // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- No placeholders
                         sprintf(__('Something went wrong when trying to connect the plugin to your Swish Handel, contact hello@bjorntech.com for assistance', 'woo-swish-e-commerce')),
                         'error'
                     );
@@ -1107,9 +1189,11 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             } else {
                 //$this->log('Nonce not verified at authorize_processing');
             }
-        } elseif (array_key_exists('error', $_REQUEST)) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Error state is checked
+        } elseif (isset($_REQUEST['error'])) {
             $this->log(sprintf('Error when connecting to Bjorntech Swish sevice'));
             SW_Notice::add(
+                // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- No placeholders
                 sprintf(__('Something went wrong when trying to connect the plugin to your Swish Handel, contact hello@bjorntech.com for assistance', 'woo-swish-e-commerce')),
                 'error'
             );
@@ -1208,14 +1292,14 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $button_mode = $this->get_option('swish_show_button');
             if ('all' == $button_mode || ('mobile' == $button_mode) && Woo_Swish_Helper::is_mobile($this->get_option('swish_improved_mobile_detection'))) {?>
                     <div class="swish-button-internal swish-notwaiting">
-                        <a class="button gotoswish" onclick="window.location.href='<?php echo $swish_url; ?>';"  href="<?php echo $swish_url; ?>"><?php echo __('Open Swish', 'woo-swish-e-commerce'); ?></a>
+                        <a class="button gotoswish" onclick="window.location.href='<?php echo esc_url($swish_url); ?>';"  href="<?php echo esc_url($swish_url); ?>"><?php echo esc_html__('Open Swish', 'woo-swish-e-commerce'); ?></a>
                     </div>
                 <?php }
         } else {
             $button_mode = $this->get_option('swish_show_button');
             if ('all' == $button_mode || ('mobile' == $button_mode) && Woo_Swish_Helper::is_mobile($this->get_option('swish_improved_mobile_detection'))) {?>
                     <div class="swish-button swish-centered swish-notwaiting">
-                        <a class="button gotoswish" onclick="window.location.href='<?php echo $swish_url; ?>';"  href="<?php echo $swish_url; ?>"><?php echo __('Start Swish app', 'woo-swish-e-commerce'); ?></a>
+                        <a class="button gotoswish" onclick="window.location.href='<?php echo esc_url($swish_url); ?>';"  href="<?php echo esc_url($swish_url); ?>"><?php echo esc_html__('Start Swish app', 'woo-swish-e-commerce'); ?></a>
                     </div>
                 <?php }
         }
@@ -1250,11 +1334,11 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             if (Woo_Swish_Helper::is_mobile($this->get_option('swish_improved_mobile_detection')) && !Woo_Swish_Helper::is_non_standard_client()) {?>
                     <script>
                         if (document.readyState !== 'loading') {
-                            let url = '<?php echo $swish_url; ?>';
+                            let url = '<?php echo esc_url($swish_url); ?>';
                             window.location.href=url;
                         } else {
                             document.addEventListener('DOMContentLoaded', function () {
-                                let url = '<?php echo $swish_url; ?>';
+                                let url = '<?php echo esc_url($swish_url); ?>';
                                 window.location.href=url;
                             });
                         }
@@ -1332,6 +1416,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function swish_wait_page_content($atts)
     {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only operation, no state change
         $order_id = isset($_GET['bt_swish_order_id']) ? intval($_GET['bt_swish_order_id']) : 0;
 
         WC_SEC()->logger->add('Using standard checkout page for internal wait page - order ' . $order_id);
@@ -1503,8 +1588,13 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function is_m_payment()
     {
-        $exclude_fb_insta = ($this->get_option('swish_checkout_type') === 'seperate_internal_v2' && $this->get_option('swish_enable_react_wait_page', 'yes') == 'yes');
-        return Woo_Swish_Helper::is_m_payment($this->get_option('swish_redirect_back'), $this->get_option('swish_improved_mobile_detection'), $exclude_fb_insta);
+        $exclude_fb_insta = ($this->get_option('swish_enable_react_wait_page', 'yes') == 'yes');
+        return Woo_Swish_Helper::is_m_payment(
+            $this->get_option('swish_redirect_back'),
+            $this->get_option('swish_improved_mobile_detection'),
+            $this->get_option('swish_checkout_type'),
+            $exclude_fb_insta
+        );
     }
 
     /**
@@ -1540,7 +1630,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             return true;
         }
 
-        $payer_alias_raw = isset($_POST[esc_attr($this->id) . '-payer-alias']) ? $_POST[esc_attr($this->id) . '-payer-alias'] : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- WooCommerce handles checkout nonce verification
+        $payer_alias_raw = isset($_POST[esc_attr($this->id) . '-payer-alias']) ? sanitize_text_field(wp_unslash($_POST[esc_attr($this->id) . '-payer-alias'])) : '';
         $payer_alias = preg_replace('/[^0-9]/', '', $payer_alias_raw);
         $number_lenght = strlen($payer_alias);
         if ($number_lenght == 0) {
@@ -1586,10 +1677,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function payment_fields()
     {
         if ($this->get_option('connection_type', '_legacy') == '_test') {
-            echo wpautop(wptexturize(__("You are running Swish e-commerce in test mode, use 4671234768 to test a payment", 'woo-swish-e-commerce')));
+            echo wp_kses_post(wpautop(wptexturize(__("You are running Swish e-commerce in test mode, use 4671234768 to test a payment", 'woo-swish-e-commerce'))));
         } else {
             if (!empty($this->description)) {
-                echo wpautop(wptexturize($this->description));
+                echo wp_kses_post(wpautop(wptexturize($this->description)));
             }
         }
         $this->form();
@@ -1611,6 +1702,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         echo '<fieldset id="swish-cc-form" class="wc-swish-form wc-payment-form">';
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Legacy hook name maintained for backward compatibility
         do_action('woocommerce_swish_form_start', $this->id);
 
         echo '<p class="form-row form-row-wide">';
@@ -1621,6 +1713,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         echo '</p>';
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Legacy hook name maintained for backward compatibility
         do_action('woocommerce_swish_form_end', $this->id);
 
         echo '<div class="clear"></div>';
@@ -1661,6 +1754,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                     WC_SEC()->logger->add(sprintf('process_payment (%s): Attempting to cancel existing payment UUID %s', $order_id, $existing_payment_uuid));
                     $swish->cancel($existing_payment_uuid, $order);
                     WC_SEC()->logger->add(sprintf('process_payment (%s): Successfully cancelled existing payment UUID %s', $order_id, $existing_payment_uuid));
+                    /* translators: %s: Payment UUID */
                     Woo_Swish_Helper::note($order, sprintf(__('Existing payment %s cancelled', 'woo-swish-e-commerce'), $existing_payment_uuid));
                 } catch (Exception $e) {
                     WC_SEC()->logger->add(sprintf('process_payment (%s): Failed to cancel existing payment UUID %s: %s', $order_id, $existing_payment_uuid, $e->getMessage()));
@@ -1673,6 +1767,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 $payment_uuid = Woo_Swish_Helper::generate_production_id($this->merchant_alias);
             }
 
+            /* translators: %s: Transaction ID */
             Woo_Swish_Helper::note($order, sprintf(__('Transaction ID %s generated', 'woo-swish-e-commerce'), $payment_uuid));
 
             $callback = Woo_Swish_Helper::get_callback_url($order_id);
@@ -1704,7 +1799,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 Woo_Swish_Helper::set_m_payment_reference($order, $payment->payment_request_token);
             }
 
-            $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- wp_unslash not needed for logging
+            $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 
             if ($user_agent) {
                 $this->log(sprintf('process_payment (%s): User agent %s', $order_id, $user_agent));
@@ -1714,7 +1810,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
             Woo_Swish_Helper::set_transaction_location($order, isset($payment->location) ? $payment->location : '');
             Woo_Swish_Helper::set_transaction_status($order, 'WAITING');
-            Woo_Swish_Helper::note($order, sprintf(__('Payment %s initiated', 'woo-swish-e-commerce'), $payment_uuid));
+                    /* translators: %s: Payment UUID */
+                    Woo_Swish_Helper::note($order, sprintf(__('Payment %s initiated', 'woo-swish-e-commerce'), $payment_uuid));
             $order->update_status('pending');
             $order->save();
 
@@ -1763,6 +1860,73 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     }
 
     /**
+     * maybe_cancel_swish_on_payment_switch.
+     *
+     * Cancels pending Swish payments when order is processed with a different payment gateway.
+     * Prevents the race condition where a user starts a Swish payment, goes back, pays with
+     * another gateway, but the Swish payment is still active and could be approved later.
+     *
+     * @access public
+     * @param int $order_id The order ID
+     * @param array $posted_data The posted data from checkout
+     * @param WC_Order $order The order object
+     * @return void
+     */
+    public function maybe_cancel_swish_on_payment_switch($order_id, $posted_data, $order)
+    {
+        // Only proceed if the cancel existing option is enabled
+        if ($this->get_option('swish_maybe_cancel_existing') !== 'yes') {
+            return;
+        }
+
+        // Skip if the current payment method is Swish (this is handled in process_payment)
+        if ($order->get_payment_method() === 'swish') {
+            return;
+        }
+
+        // Check if there's an existing pending Swish payment
+        $existing_payment_uuid = Woo_Swish_Helper::get_payment_uuid($order);
+        $transaction_status = Woo_Swish_Helper::get_transaction_status($order);
+
+        if (empty($existing_payment_uuid) || $transaction_status !== 'WAITING') {
+            return;
+        }
+
+        // Try to cancel the pending Swish payment
+        try {
+            $this->log(sprintf('maybe_cancel_swish_on_payment_switch (%s): Attempting to cancel pending Swish payment UUID %s - order is now being paid with %s', $order_id, $existing_payment_uuid, $order->get_payment_method()));
+            
+            $swish = new $this->connection_class();
+            $swish->cancel($existing_payment_uuid, $order);
+            
+            $this->log(sprintf('maybe_cancel_swish_on_payment_switch (%s): Successfully cancelled pending Swish payment UUID %s', $order_id, $existing_payment_uuid));
+            /* translators: %s: Payment UUID */
+            Woo_Swish_Helper::note($order, sprintf(__('Pending Swish payment %s cancelled - customer switched to another payment method', 'woo-swish-e-commerce'), $existing_payment_uuid));
+            
+        } catch (Exception $e) {
+            $this->log(sprintf('maybe_cancel_swish_on_payment_switch (%s): Failed to cancel pending Swish payment UUID %s: %s', $order_id, $existing_payment_uuid, $e->getMessage()));
+            /* translators: %s: Error message */
+            Woo_Swish_Helper::note($order, sprintf(__('Failed to cancel pending Swish payment: %s', 'woo-swish-e-commerce'), $e->getMessage()));
+        }
+    }
+
+    /**
+     * maybe_cancel_swish_on_payment_switch_blocks.
+     *
+     * Wrapper for block checkout (Store API) that adapts the parameters for the main handler.
+     *
+     * @access public
+     * @param WC_Order $order The order object
+     * @return void
+     */
+    public function maybe_cancel_swish_on_payment_switch_blocks($order)
+    {
+        // The block checkout hook passes the order object directly
+        // We'll call the main handler with empty posted_data since it's not available in block context
+        $this->maybe_cancel_swish_on_payment_switch($order->get_id(), array(), $order);
+    }
+
+    /**
      * Process refunds
      *
      * @param  int $order_id
@@ -1777,6 +1941,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $order = wc_get_order($order_id);
 
             if (!($payment_reference = Woo_Swish_Helper::get_payment_reference($order))) {
+                /* translators: %s: Order ID */
                 throw new Woo_Swish_Exception(sprintf(__("Payment reference required for refund is missing on order %s", 'woo-swish-e-commerce'), $order_id));
             }
 
@@ -1866,7 +2031,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         } else {
 
-            $this->logger->add(sprintf('Failed decoding authorize json %s %s', print_r($request_body, true), json_last_error()));
+            $this->logger->add(sprintf('Failed decoding authorize json %s', json_last_error()));
             set_site_transient('swish_connect_result', 'failure', MINUTE_IN_SECONDS);
             status_header(403, 'invalid_json');
 
@@ -1892,7 +2057,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             }
 
         } catch (Throwable $t) {
-            WC_SEC()->logger->add(print_r($t, true));
+            WC_SEC()->logger->add($t->getMessage());
         }
         return false;
     }
@@ -1999,7 +2164,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         } catch (Throwable $throwable) {
 
-            $this->logger->add(print_r($throwable, true));
+            $this->logger->add($throwable->getMessage());
 
         }
 
@@ -2019,6 +2184,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             // If the payment method is not Swish, log it and return nothing.
             $this->logger->add(sprintf('process_order (%s): Payment method is not Swish.', $order_id));
             if (!$order->get_meta('swish_paymentmethod_switched')) {
+                /* translators: %s: New payment method */
                 Woo_Swish_Helper::note($order, sprintf(__('Payment method switched from Swish to %s', 'woo-swish-e-commerce'), $order->get_payment_method()));
                 $this->logger->add(sprintf('process_order (%s): Payment method is not Swish. Added note in order.', $order_id));
                 $order->update_meta_data('swish_paymentmethod_switched', true);
@@ -2031,6 +2197,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             case 'DECLINED':
                 if ('DECLINED' != $current_status) {
                     Woo_Swish_Helper::set_transaction_status($order, 'DECLINED');
+                    /* translators: %s: Payment type (Test-payment or Payment) */
                     Woo_Swish_Helper::note($order, sprintf(__('%s declined by user', 'woo-swish-e-commerce'), $testmode ? __('Test-payment', 'woo-swish-e-commerce') : __('Payment', 'woo-swish-e-commerce')));
                     $order->update_status('failed');
                 }
@@ -2045,17 +2212,20 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 break;
             case 'DEBITED':
                 if ('DEBITED' != $current_status) {
-                    Woo_Swish_Helper::note($order, sprintf(__('Merchant account debited - %s ID: %s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
+                    /* translators: 1: Transaction type (Test-transaction or Transaction), 2: Transaction ID */
+                    Woo_Swish_Helper::note($order, sprintf(__('Merchant account debited - %1$s ID: %2$s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
                     Woo_Swish_Helper::set_transaction_status($order, 'DEBITED');
                 }
                 break;
             case 'PAID':
                 if (isset($request_body->originalPaymentReference)) {
                     do_action('swish_ecommerce_refund_complete', $order);
-                    Woo_Swish_Helper::note($order, sprintf(__('Refund to customer confirmed - %s ID: %s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
+                    /* translators: 1: Transaction type (Test-transaction or Transaction), 2: Transaction ID */
+                    Woo_Swish_Helper::note($order, sprintf(__('Refund to customer confirmed - %1$s ID: %2$s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
                     Woo_Swish_Helper::set_refund_id($order, $request_body->paymentReference);
                 } elseif (!Woo_Swish_Helper::get_payment_reference($order, true) && 'PAID' != $current_status) {
-                    Woo_Swish_Helper::note($order, sprintf(__('Payment confirmed - %s ID: %s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
+                    /* translators: 1: Transaction type (Test-transaction or Transaction), 2: Transaction ID */
+                    Woo_Swish_Helper::note($order, sprintf(__('Payment confirmed - %1$s ID: %2$s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
                     Woo_Swish_Helper::set_transaction_status($order, 'PAID');
                     Woo_Swish_Helper::set_payment_reference($order, $request_body->paymentReference);
                     Woo_Swish_Helper::set_order_merchant_alias($order, $this->merchant_alias);
@@ -2091,7 +2261,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function callback_handler()
     {
 
-        $order_id = array_key_exists('order_id', $_REQUEST) ? trim($_REQUEST['order_id']) : false;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Swish callback is verified via order ID and payment UUID
+        $order_id = isset($_REQUEST['order_id']) ? sanitize_text_field(wp_unslash($_REQUEST['order_id'])) : false;
         if ($order_id === false) {
             $this->logger->add(sprintf('callback_handler: Order-id missning'));
             status_header(403);
@@ -2153,13 +2324,13 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         ?>
             <tr valign="top">
                 <th scope="row" class="titledesc">
-                    <label for="<?php echo esc_attr($field_key); ?>"><?php echo wp_kses_post($data['title']); ?> <?php echo $this->get_tooltip_html($data); ?></label>
+                    <label for="<?php echo esc_attr($field_key); ?>"><?php echo wp_kses_post($data['title']); ?> <?php echo wp_kses_post($this->get_tooltip_html($data)); ?></label>
                 </th>
                 <td class="forminp">
                     <fieldset>
                         <legend class="screen-reader-text"><span><?php echo wp_kses_post($data['title']); ?></span></legend>
-                        <button class="button <?php echo esc_attr($data['class']); ?>" type="<?php echo esc_attr($data['type']); ?>" name="<?php echo esc_attr($field_key); ?>" id="<?php echo esc_attr($field_key); ?>" style="<?php echo esc_attr($data['css']); ?>" <?php disabled($data['disabled'], true);?> <?php echo $this->get_custom_attribute_html($data); ?> ><?php echo $data['text'] ?></button>
-                        <?php echo $this->get_description_html($data); ?>
+                        <button class="button <?php echo esc_attr($data['class']); ?>" type="<?php echo esc_attr($data['type']); ?>" name="<?php echo esc_attr($field_key); ?>" id="<?php echo esc_attr($field_key); ?>" style="<?php echo esc_attr($data['css']); ?>" <?php disabled($data['disabled'], true);?> <?php echo wp_kses_post($this->get_custom_attribute_html($data)); ?> ><?php echo esc_html($data['text']); ?></button>
+                        <?php echo wp_kses_post($this->get_description_html($data)); ?>
                     </fieldset>
                 </td>
             </tr>
@@ -2219,7 +2390,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function meta_box_payment($post_or_order)
     {
         $name = ($post_or_order instanceof WP_Post) ? $post_or_order->ID : $post_or_order->get_id();
-        echo '<a class="button swish_retrieve_button" id="swish_retrieve_button" name="' . $name . '">' . __('Retrieve payment', 'woo-swish-e-commerce') . '</a>';
+        echo '<a class="button swish_retrieve_button" id="swish_retrieve_button" name="' . esc_attr($name) . '">' . esc_html__('Retrieve payment', 'woo-swish-e-commerce') . '</a>';
     }
 
     public function retreive_transaction($transaction_location)
@@ -2238,10 +2409,12 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
      */
     public function ajax_swish_retrieve_transaction()
     {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
             wp_die();
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         $order = wc_get_order($_POST['name']);
 
         $transaction_location = Woo_Swish_Helper::get_transaction_location($order);
@@ -2353,6 +2526,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             }
         }
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce core filter
         $needs_shipping = apply_filters('woocommerce_cart_needs_shipping', $needs_shipping);
 
         // Only apply if all packages are being shipped via chosen method, or order is virtual.

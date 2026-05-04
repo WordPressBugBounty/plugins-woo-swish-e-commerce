@@ -4,13 +4,15 @@ Tags: swish, ecommerce, payment, woocommerce, swish-handel
 Requires at least: 4.9
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 3.7.7
+Stable tag: 3.7.8
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
-Accept Swish payments in your webshop. [See our guide here on how to set up the plugin with BjornTech as the Technical supplier](https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product).
+Accept Swish payments in your WooCommerce store with BjornTech as Technical Supplier.
 
 == Description ==
+
+[See our guide on how to set up the plugin with BjornTech as the Technical supplier](https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product).
 
 Our plugin makes it possible for you to accept Swish as payment method in your webshop. This payment method suits you if you want to offer your customers fast, simple and safe mobile payments.
 
@@ -59,6 +61,15 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.7.8 =
+* Verified to work with WooCommerce 10.7
+* Fix: Fixed JavaScript polling race conditions on wait page
+* Fix: Fixed missing Swish gateway icon in checkout
+* Fix: Fixed class name error in site age limit functionality
+* Fix: Improved payment status handling when returning from Swish app
+* Security: Added proper nonce validation throughout
+* Security: Added input sanitization with wp_unslash()
+* Dev: Improved code quality and error handling
 = 3.7.7 =
 * Fix: Updated refund API from v1 to v2
 = 3.7.6 =
@@ -90,7 +101,7 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 * Dev: Changed the way the plugin is loaded to ensure that it is loaded after WooCommerce is initialized
 = 3.7.0 =
 * New: Added React support for the new checkout page - this is automatically enabled for new users
-* Fix: Ad popup shows up with every cache refresh 
+* Fix: Ad popup shows up with every cache refresh
 = 3.6.9 =
 * Fix: Swish redirect on mobile sometimes redirected you back to Swish event though the order was already paid
 = 3.6.8 =
@@ -137,7 +148,7 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 * Verified to work with WooCommerce 7.9
 * WC High-Performance Order Storage compatibility declaration
 * New: Added the option to mirror the billing phone number in the checkout with the customers Swish number
-* New: Added the option to redirect to Swish directly after initializing the payment on mobile 
+* New: Added the option to redirect to Swish directly after initializing the payment on mobile
 * Fix: Appearance of the the new Swish wait page sometimes looking strange when combined with certain themes
 * Dev: Added a filter that allows blocking of certain Swish payments as soon as they are initiatied
 = 3.5.8 =
