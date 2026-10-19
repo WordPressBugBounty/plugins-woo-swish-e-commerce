@@ -26,7 +26,7 @@ class SW_Notice
     public static function add($message, $type = 'error', $dismiss = true, $id = false, $time = false)
     {
 
-        $notices = get_site_transient('swish_notices');
+        $notices = get_transient('swish_notices');
         if (!$notices) {
             $notices = array();
         }
@@ -40,20 +40,20 @@ class SW_Notice
         $id = $id === false ? uniqid('id-') : 'id-' . esc_html($id);
         $notices[$id] = $notice;
 
-        set_site_transient('swish_notices', $notices);
+        set_transient('swish_notices', $notices);
 
         return $id;
     }
 
     public static function clear($id = false)
     {
-        $notices = get_site_transient('swish_notices');
+        $notices = get_transient('swish_notices');
         if ($id && isset($notices[$id])) {
             unset($notices[$id]);
         } else {
             $notices = array();
         }
-        set_site_transient('swish_notices', $notices);
+        set_transient('swish_notices', $notices);
     }
 
     public static function display($message, $type = 'error', $dismiss = false, $id = '')
@@ -64,7 +64,7 @@ class SW_Notice
 
     public function check_displaylist()
     {
-        $notices = get_site_transient('swish_notices');
+        $notices = get_transient('swish_notices');
 
         if (false !== $notices && !empty($notices)) {
             foreach ($notices as $key => $notice) {
@@ -75,7 +75,7 @@ class SW_Notice
             }
         }
 
-        set_site_transient('swish_notices', $notices);
+        set_transient('swish_notices', $notices);
     }
 
     public function ajax_clear_notice()

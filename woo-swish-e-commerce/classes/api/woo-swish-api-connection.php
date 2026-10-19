@@ -33,9 +33,9 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
         {
 
             $time_now = time();
-            $access_token = get_site_transient('swish_access_token');
+            $access_token = get_transient('swish_access_token');
 
-            if ($this->refresh_token && !$access_token) {
+            if (is_string($this->refresh_token) && $this->refresh_token !== '' && !$access_token) {
 
                 $body = array(
                     'grant_type' => 'refresh_token',
@@ -55,18 +55,14 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
                 $url = 'https://' . $this->service_url . '/token';
 
-                WC_SEC()->logger->add(sprintf('execute: Posting to "%s" using ""%s" as args', $url, json_encode($args)));
+                WC_SEC()->logger->add('execute: Refreshing Swish service access credentials.');
 
                 $response = wp_safe_remote_post($url, $args);
 
                 if (is_wp_error($response)) {
 
-                    $code = $response->get_error_code();
-
-                    $error = $response->get_error_message($code);
-
                     // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Error message is escaped before output
-                    throw new Woo_Swish_API_Exception(esc_html($error), 0, null, $url, $body);
+                    throw new Woo_Swish_API_Exception(esc_html(__('Could not refresh Swish service credentials', 'woo-swish-e-commerce')), 0, null, $url);
 
                 } else {
 
@@ -75,15 +71,24 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                     if (($http_code = wp_remote_retrieve_response_code($response)) != 200) {
 
                         // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Error is escaped before output
-                        throw new Woo_Swish_API_Exception(esc_html($response_body->error), $http_code, null, $url, $body, $response);
+                        throw new Woo_Swish_API_Exception(esc_html(__('Swish service credential refresh was rejected', 'woo-swish-e-commerce')), (int) $http_code, null, $url);
 
                     }
 
+                    if (!is_object($response_body) || !is_string($response_body->access_token ?? null) || trim($response_body->access_token) === ''
+                        || !is_string($response_body->refresh_token ?? null) || trim($response_body->refresh_token) === ''
+                        || !(is_int($response_body->expires_in ?? null) || (is_string($response_body->expires_in ?? null) && ctype_digit($response_body->expires_in)))
+                        || (int) $response_body->expires_in <= 0) {
+                        throw new Woo_Swish_API_Exception(esc_html(__('Swish service returned invalid credentials', 'woo-swish-e-commerce')), 0, null, $url);
+                    }
+
+                    try {
+                        WC_SEC()->store_legacy_refresh_token($this->account_uuid, $this->refresh_token, $response_body->refresh_token, $response_body->access_token, (int) $response_body->expires_in);
+                    } catch (Throwable $error) {
+                        throw new Woo_Swish_API_Exception(esc_html(__('Swish connection changed during credential refresh', 'woo-swish-e-commerce')), 0, null, $url);
+                    }
                     $access_token = $response_body->access_token;
                     $this->refresh_token = $response_body->refresh_token;
-
-                    set_site_transient('swish_access_token', $response_body->access_token, $response_body->expires_in);
-                    WC_SEC()->update_option('swish_refresh_token', $this->refresh_token);
 
                 }
 
@@ -183,7 +188,7 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                 'timeout' => 20,
             );
 
-            WC_SEC()->logger->add(sprintf('execute: Requesting from "%s" using "%s" as args', $url, json_encode($args)));
+            WC_SEC()->logger->add(sprintf('execute: Sending %s Swish service request.', $method));
 
             $response = wp_safe_remote_request($url, $args);
 

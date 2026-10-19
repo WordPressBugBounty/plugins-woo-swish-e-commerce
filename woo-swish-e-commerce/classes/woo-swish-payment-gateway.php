@@ -19,6 +19,22 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     private static $shutdown_called = false;
 
     /**
+     * Orders currently being processed in this PHP request.
+     *
+     * This is separate from the transient mutex so recursive calls from hooks do
+     * not deadlock or enqueue a retry for work already underway.
+     *
+     * @var array
+     */
+    private static $processing_orders = array();
+
+    /** @var array */
+    private $skip_process_order_retry = array();
+
+    private const PROCESS_ORDER_LOCK_TTL = 30;
+    private const PROCESS_ORDER_MAX_RETRIES = 3;
+
+    /**
      * @var Woo_Swish_Log
      * @access public
      */
@@ -98,7 +114,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $this->merchant_alias = $this->get_option('merchant_alias');
         }
 
-        if (!get_site_transient('swish_activated_or_upgraded')) {
+        if (!get_transient('swish_activated_or_upgraded')) {
 
             $this->logger->add(sprintf('Swish activated or upgraded connection type = %s, merchant alias = %s', $this->connection_type, $this->merchant_alias));
 
@@ -108,9 +124,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 $this->logger->add('Swish connection type changed to _legacy');
             }
 
-            delete_site_transient('swish_access_token');
+            delete_transient('swish_access_token');
 
-            set_site_transient('swish_activated_or_upgraded', wp_date('c'));
+            set_transient('swish_activated_or_upgraded', wp_date('c'));
 
         }
 
@@ -151,6 +167,7 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         add_action('rest_api_init', array($this, 'register_rest_api'));
         add_action('swish_retrieve_payment_info', array($this, 'retrieve_payment_info'));
         add_action('swish_retrieve_payment_info_delayed', array($this, 'retrieve_payment_info'));
+        add_action('swish_process_order_retry', array($this, 'retry_process_order'), 10, 3);
         add_filter('woocommerce_available_payment_gateways', array($this, 'filter_available_payment_gateways'));
 
         // Add hooks to cancel pending Swish payments when order is processed with another gateway
@@ -529,7 +546,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function ajax_connect_swish_service()
     {
-
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die();
+        }
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if (!wp_verify_nonce($_POST['nonce'], 'ajax_swish_admin')) {
             wp_die();
@@ -618,65 +637,27 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 }
             }
 
-            $this->update_option('connection_type', '_service');
-
-            $nonce = wp_create_nonce('handle_swish_account');
-            set_site_transient('handle_swish_account', $nonce, WEEK_IN_SECONDS);
-
             $admin_url = Woo_Swish_Settings::get_settings_page_url();
-
-            $this->log(sprintf('admin_url: %s', $admin_url));
-
-            $body = json_encode(array(
-                'email' => $swish_user_email,
-                'version' => $this->version,
-                'merchant_alias' => $merchant_alias,
-                'nonce' => $nonce,
-                'redirect_uri' => $home_url,
-                'admin_url' => $admin_url,
-            ));
-
-            $response = wp_safe_remote_post('https://' . $this->service_url . '/connect', array(
-                'headers' => array(
-                    'Content-Type' => 'application/json',
-                ),
-                'timeout' => 30,
-                'body' => $body,
-            ));
-
-            if (is_wp_error($response)) {
-
-                $code = $response->get_error_code();
-                $error = $response->get_error_message($code);
-                $response_body = json_decode(wp_remote_retrieve_body($response));
-                $this->logger->add($code);
-                $this->logger->add($error);
-                $this->logger->add(wp_json_encode($response_body));
+            try {
+                (new Woo_Swish_OAuth_Connection($this))->start_legacy(function ($nonce) use ($swish_user_email, $merchant_alias, $home_url, $admin_url) {
+                    return wp_safe_remote_post('https://' . $this->service_url . '/connect', array(
+                        'headers' => array('Content-Type' => 'application/json'),
+                        'timeout' => 30,
+                        'body' => wp_json_encode(array(
+                            'email' => $swish_user_email, 'version' => $this->version,
+                            'merchant_alias' => $merchant_alias, 'nonce' => $nonce,
+                            'redirect_uri' => $home_url, 'admin_url' => $admin_url,
+                        )),
+                    ));
+                }, WEEK_IN_SECONDS);
+                $response = array('result' => 'success');
+            } catch (Throwable $error) {
                 $response = array(
                     'result' => 'error',
                     // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- No placeholders
                     'message' => __('Something went wrong when trying to connect to the BjornTech service.', 'woo-swish-e-commerce'),
                 );
-                $this->logger->add('Failed connecing to BjornTech service');
-
-            } else {
-
-                $response_body = json_decode(wp_remote_retrieve_body($response));
-                $response_code = wp_remote_retrieve_response_code($response);
-                if ($response_body->account_uuid) {
-                    $this->account_uuid = $response_body->account_uuid;
-                    $this->update_option('swish_account_uuid', $this->account_uuid);
-                    $this->logger->add(sprintf('BjornTech account uuid %s was created', $this->account_uuid));
-                    $response = array(
-                        'result' => 'success',
-                    );
-                } else {
-                    $response = array(
-                        'result' => 'error',
-                        'message' => __('Something went wrong when trying to connect to the BjornTech service.', 'woo-swish-e-commerce'),
-                    );
-                    $this->logger->add(sprintf('Failed to create BjornTech account, error %s', $response_body->response));
-                }
+                $this->logger->add('Failed connecting to BjornTech service.');
             }
         }
 
@@ -686,6 +667,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function ajax_disconnect_swish_service()
     {
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die();
+        }
         // Check and sanitize nonce
         if (!isset($_POST['nonce'])) {
             wp_die();
@@ -694,28 +678,22 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         if (!wp_verify_nonce($nonce, 'ajax_swish_admin')) {
             wp_die();
         }
-        $auth_url = 'https://' . $this->service_url . '/disconnect';
-        $site_params = array(
-            'email' => $this->get_option('swish_user_email'),
-            'version' => $this->version,
-            'merchant_alias' => $this->get_option('merchant_alias'),
-            'nonce' => wp_create_nonce('handle_swish_account'),
-            'uuid' => $this->account_uuid,
-        );
-        $encoded_params = base64_encode(json_encode($site_params));
-        $home_url = home_url();
-
-        $url = $auth_url . '?redirect_uri=' . $home_url . '&state=' . $encoded_params;
-        $response = wp_safe_remote_get($url, array('timeout' => 20));
-
-        if (is_wp_error($response)) {
-            $this->logger->add(__('Something went wrong when trying to disconnect from the certificate service', 'woo-swish-e-commerce'));
-        } else {
-            $this->account_uuid = false;
-            $this->update_option('swish_account_uuid', '');
-            $this->update_option('swish_refresh_token', '');
-            delete_site_transient('swish_access_token');
+        try {
+            (new Woo_Swish_OAuth_Connection($this))->disconnect(function ($settings) {
+                $site_params = array(
+                    'email' => $settings['swish_user_email'] ?? '',
+                    'version' => $this->version,
+                    'merchant_alias' => $settings['merchant_alias'] ?? '',
+                    'nonce' => wp_create_nonce('handle_swish_account'),
+                    'uuid' => $settings['swish_account_uuid'] ?? '',
+                );
+                $url = 'https://' . $this->service_url . '/disconnect?redirect_uri=' . home_url()
+                    . '&state=' . base64_encode(wp_json_encode($site_params));
+                return wp_safe_remote_get($url, array('timeout' => 20));
+            });
             $this->logger->add(__('Succcessfully disconnected from the certificate service', 'woo-swish-e-commerce'));
+        } catch (Throwable $error) {
+            $this->logger->add(__('Something went wrong when trying to disconnect from the certificate service', 'woo-swish-e-commerce'));
         }
 
         $response = array(
@@ -1024,40 +1002,40 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         }
 
-        if (false !== get_site_transient('swish_activated')) {
-            delete_site_transient('swish_activated');
+        if (false !== get_transient('swish_activated')) {
+            delete_transient('swish_activated');
 
             try {
                 sw_notice::clear();
-                delete_site_transient('swish_did_show_connection_info');
-                delete_site_transient('swish_did_show_legacy_info');
+                delete_transient('swish_did_show_connection_info');
+                delete_transient('swish_did_show_legacy_info');
                 do_action('swish_force_connection');
             } catch (Woo_Swish_API_Exception $e) {
                 $e->write_to_logs();
             }
         }
 
-        if (false !== get_site_transient('swish_upgraded')) {
-            delete_site_transient('swish_upgraded');
+        if (false !== get_transient('swish_upgraded')) {
+            delete_transient('swish_upgraded');
             try {
                 sw_notice::clear();
                 do_action('swish_force_connection');
-                delete_site_transient('swish_did_show_connection_info');
-                delete_site_transient('swish_did_show_legacy_info');
+                delete_transient('swish_did_show_connection_info');
+                delete_transient('swish_did_show_legacy_info');
             } catch (Woo_Swish_API_Exception $e) {
                 $e->write_to_logs();
             }
         }
 
-        if (!$this->connection_type && !get_site_transient('swish_did_show_connection_info')) {
+        if (!$this->connection_type && !get_transient('swish_did_show_connection_info')) {
             /* translators: %s: Settings page URL */
             $message = sprintf(__('Congratulations! You can now be live with Swish payments within minutes. Go to the <a href="%s">configuration page</a> and select BjornTech as Technical Supplier as your connection type.', 'woo-swish-e-commerce'), get_admin_url(null, 'admin.php?page=wc-settings&tab=checkout&section=swish'));
             $id = sw_notice::add($message, 'info');
-            set_site_transient('swish_did_show_connection_info', $id);
-        } elseif ($this->connection_type == '_legacy' && !get_site_transient('swish_did_show_legacy_info')) {
+            set_transient('swish_did_show_connection_info', $id);
+        } elseif ($this->connection_type == '_legacy' && !get_transient('swish_did_show_legacy_info')) {
             $message = __('Congratulations! Your Swish-plugin is now upgraded. You can continue using it as normal. In this version you can use BjornTech as Technical Supplier, read more <a href="https://bjorntech.com/sv/swish-teknisk-leverantor?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product">here</a>', 'woo-swish-e-commerce');
             $id = sw_notice::add($message, 'info');
-            set_site_transient('swish_did_show_legacy_info', $id);
+            set_transient('swish_did_show_legacy_info', $id);
         }
 
     }
@@ -1106,10 +1084,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
         }
 
         $message = '';
-        if (get_site_transient('handle_swish_account')) {
-            if ($connected = get_site_transient('swish_connect_result')) {
-                delete_site_transient('handle_swish_account');
-                delete_site_transient('swish_connect_result');
+        if (get_transient('handle_swish_account')) {
+            if ($connected = get_transient('swish_connect_result')) {
+                delete_transient('handle_swish_account');
+                delete_transient('swish_connect_result');
                 if ($connected == 'failure') {
                     $message = __('The activation of the account failed', 'woo-swish-e-commerce');
                 }
@@ -1153,41 +1131,30 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             return;
         }
 
-        $nonce = get_site_transient('handle_swish_account');
+        if (!current_user_can('manage_woocommerce')) {
+            return;
+        }
 
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce is verified against transient
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- One-use state is verified below.
         if (isset($_REQUEST['account_uuid']) && isset($_REQUEST['refresh_token'])) {
-            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce is verified against transient
-            if (isset($_REQUEST['nonce']) && $nonce !== false && trim(sanitize_text_field(wp_unslash($_REQUEST['nonce']))) === $nonce) {
-                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Sanitized below
-                $account_uuid = sanitize_text_field(wp_unslash($_REQUEST['account_uuid']));
-                if ($this->account_uuid == $account_uuid) {
-                    $this->update_settings_at_init();
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Shared strict validation below.
+            $body = (object) array('nonce' => wp_unslash($_REQUEST['nonce'] ?? null), 'uuid' => wp_unslash($_REQUEST['account_uuid']), 'refresh_token' => wp_unslash($_REQUEST['refresh_token']));
+            try {
+                $accepted = (new Woo_Swish_OAuth_Connection($this))->complete_legacy($body);
+            } catch (Throwable $error) {
+                $accepted = false;
+            }
+            if ($accepted) {
+                $this->update_settings_at_init();
 
-                    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Sanitized below
-                    $this->refresh_token = sanitize_text_field(wp_unslash($_REQUEST['refresh_token']));
-                    $this->update_option('swish_refresh_token', WC_SEC()->refresh_token);
-                    delete_site_transient('swish_access_token');
-                    $this->log(sprintf('Account uuid %s was authorized and got refresh token %s from service', WC_SEC()->account_uuid, WC_SEC()->refresh_token));
+                SW_Notice::add(
+                    /* translators: %s: URL to guide page */
+                    sprintf(__('Congratulations! The plugin is now connected to the BjornTech Swish service! Please follow the guide <a href="%s">here</a> to proceed!', 'woo-swish-e-commerce'), 'https://bjorntech.com/sv/kb/swish-teknisk-leverantor/'),
+                    'success'
+                );
 
-                    SW_Notice::add(
-                        /* translators: %s: URL to guide page */
-                        sprintf(__('Congratulations! The plugin is now connected to the BjornTech Swish service! Please follow the guide <a href="%s">here</a> to proceed!', 'woo-swish-e-commerce'), 'https://bjorntech.com/sv/kb/swish-teknisk-leverantor/'),
-                        'success'
-                    );
-
-                    wp_safe_redirect(admin_url('admin.php?page=wc-settings&tab=checkout&section=swish'));
-                    exit;
-                } else {
-                    $this->log(sprintf('Wrong account UUID %s, should have been %s', $account_uuid, WC_SEC()->account_uuid));
-                    SW_Notice::add(
-                        // phpcs:ignore WordPress.WP.I18n.MissingTranslatorsComment -- No placeholders
-                        sprintf(__('Something went wrong when trying to connect the plugin to your Swish Handel, contact hello@bjorntech.com for assistance', 'woo-swish-e-commerce')),
-                        'error'
-                    );
-                }
-            } else {
-                //$this->log('Nonce not verified at authorize_processing');
+                wp_safe_redirect(admin_url('admin.php?page=wc-settings&tab=checkout&section=swish'));
+                exit;
             }
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Error state is checked
         } elseif (isset($_REQUEST['error'])) {
@@ -1732,6 +1699,11 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
     public function process_payment($order_id)
     {
 
+        $persisted_payment_uuid = false;
+        $previous_payment_uuid = null;
+        $previous_transaction_status = null;
+        $previous_order_status = null;
+
         try {
 
             $this->logger->add(sprintf('Processing payment for order %s using connection type %s', $order_id, $this->connection_class));
@@ -1746,6 +1718,29 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                     'result' => 'fail',
                     'redirect' => $order->get_checkout_payment_url(false),
                 );
+            }
+
+            // Check if there's an existing payment UUID and verify its status
+            if ($this->get_option('swish_check_existing_paid') == 'yes' && ($existing_payment_uuid = Woo_Swish_Helper::get_payment_uuid($order))) {
+                try {
+                    $this->logger->add(sprintf('process_payment (%s): Checking status of existing payment UUID %s', $order_id, $existing_payment_uuid));
+                    $payment_body = $this->retreive_transaction($existing_payment_uuid);
+                    $payment_status = isset($payment_body->status) ? $payment_body->status : 'unknown';
+                    $this->logger->add(sprintf('process_payment (%s): Existing payment UUID %s has status %s', $order_id, $existing_payment_uuid, $payment_status));
+
+                    if ('PAID' === $payment_status || 'DEBITED' === $payment_status) {
+                        $this->process_order($order, $payment_body);
+                        $this->logger->add(sprintf('process_payment (%s): Existing payment %s is already paid/debited, redirecting to thank you page', $order_id, $existing_payment_uuid));
+
+                        return array(
+                            'result' => 'success',
+                            'redirect' => $this->get_return_url($order),
+                        );
+                    }
+                } catch (Exception $e) {
+                    $this->logger->add(sprintf('process_payment (%s): Failed to check status of existing payment UUID %s: %s', $order_id, $existing_payment_uuid, $e->getMessage()));
+                    // Fall through to normal payment creation instead of blocking checkout
+                }
             }
 
             // Check if there's an existing payment UUID and try to cancel it first (only for production)
@@ -1770,6 +1765,16 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             /* translators: %s: Transaction ID */
             Woo_Swish_Helper::note($order, sprintf(__('Transaction ID %s generated', 'woo-swish-e-commerce'), $payment_uuid));
 
+            // Persist the UUID before the remote request so an immediate callback can be verified.
+            $previous_payment_uuid = Woo_Swish_Helper::get_payment_uuid($order);
+            $previous_transaction_status = Woo_Swish_Helper::get_transaction_status($order);
+            $previous_order_status = $order->get_status();
+            Woo_Swish_Helper::set_payment_uuid($order, $payment_uuid);
+            Woo_Swish_Helper::set_transaction_status($order, 'WAITING');
+            $order->update_status('pending');
+            $order->save();
+            $persisted_payment_uuid = true;
+
             $callback = Woo_Swish_Helper::get_callback_url($order_id);
 
             if ($this->is_q_payment() || $this->is_m_payment()) {
@@ -1793,7 +1798,9 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 );
             }
 
-
+            // The callback may have completed while create() was waiting on Swish.
+            // Reload and only make non-terminal checkout changes on the fresh order.
+            $order = $this->get_fresh_order($order_id);
 
             if ($this->is_m_payment() || $this->is_q_payment()) {
                 Woo_Swish_Helper::set_m_payment_reference($order, $payment->payment_request_token);
@@ -1809,10 +1816,8 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             }
 
             Woo_Swish_Helper::set_transaction_location($order, isset($payment->location) ? $payment->location : '');
-            Woo_Swish_Helper::set_transaction_status($order, 'WAITING');
-                    /* translators: %s: Payment UUID */
-                    Woo_Swish_Helper::note($order, sprintf(__('Payment %s initiated', 'woo-swish-e-commerce'), $payment_uuid));
-            $order->update_status('pending');
+            /* translators: %s: Payment UUID */
+            Woo_Swish_Helper::note($order, sprintf(__('Payment %s initiated', 'woo-swish-e-commerce'), $payment_uuid));
             $order->save();
 
             $redirect_url = $this->generate_redirect_url($order);
@@ -1829,6 +1834,21 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             $e->write_to_logs();
             $message = $e->getMessage();
 
+            // A synchronous 4xx response (other than statuses where the outcome can
+            // still be indeterminate) means Swish did not create this request. Put
+            // the prior active payment back so its callback remains verifiable. A
+            // transport failure or 5xx may have happened after Swish accepted the
+            // request, so the new UUID must remain authoritative in those cases.
+            if ($persisted_payment_uuid && $this->is_definitive_payment_creation_rejection($e)) {
+                $this->restore_rejected_payment_attempt(
+                    $order_id,
+                    $payment_uuid,
+                    $previous_payment_uuid,
+                    $previous_transaction_status,
+                    $previous_order_status
+                );
+            }
+
             if ($e->getCode() == 403 && $e->getMessage() == 'User is not authorized to access this resource with an explicit deny in an identity-based policy') {
                 $message = __('The Swish service is not yet connected to the site. Please click the link in the activation email that was sent out when you started the connection process in the Swish plugin settings', 'woo-swish-e-commerce');
             }
@@ -1843,6 +1863,100 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
             
         }
 
+    }
+
+    private function is_definitive_payment_creation_rejection(Woo_Swish_API_Exception $exception): bool
+    {
+        $code = (int) $exception->getCode();
+
+        // These are local request validation/encoding failures raised before I/O.
+        if (in_array($code, array(902, 903, 904, 999), true)) {
+            return true;
+        }
+
+        // Request timeout, duplicate/conflict, too-early, and throttling responses
+        // do not prove that the idempotent PUT was rejected by Swish.
+        return $code >= 400
+            && $code < 500
+            && !in_array($code, array(408, 409, 425, 429), true);
+    }
+
+    private function restore_rejected_payment_attempt($order_id, $rejected_payment_uuid, $previous_payment_uuid, $previous_transaction_status, $previous_order_status): void
+    {
+        $lock_key = 'swish_process_order_' . $order_id;
+        $owner = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : uniqid('swish_', true);
+
+        try {
+            // Coordinate the check/write with callback processing. As with the main
+            // callback mutex this is best effort because WordPress transients do not
+            // provide an atomic acquire operation.
+            if (false !== get_transient($lock_key)) {
+                $this->logger->add(sprintf('process_payment (%s): Not restoring rejected payment %s because order processing is in progress', $order_id, $rejected_payment_uuid));
+                return;
+            }
+            set_transient($lock_key, $owner, self::PROCESS_ORDER_LOCK_TTL);
+            if ($owner !== get_transient($lock_key)) {
+                return;
+            }
+
+            try {
+                $order = $this->get_fresh_order($order_id);
+                if (!$order) {
+                    return;
+                }
+
+                // Never roll back a callback completion or a subsequent checkout attempt.
+                if ((string) Woo_Swish_Helper::get_payment_uuid($order) !== (string) $rejected_payment_uuid
+                    || 'WAITING' !== Woo_Swish_Helper::get_transaction_status($order)
+                    || 'pending' !== $order->get_status()) {
+                    $this->logger->add(sprintf('process_payment (%s): Not restoring rejected payment %s because persisted payment state has changed', $order_id, $rejected_payment_uuid));
+                    return;
+                }
+
+                Woo_Swish_Helper::set_payment_uuid($order, $previous_payment_uuid);
+                Woo_Swish_Helper::set_transaction_status($order, $previous_transaction_status);
+                $order->set_status($previous_order_status);
+                $order->save();
+                $this->logger->add(sprintf('process_payment (%s): Restored payment %s after payment %s was rejected', $order_id, $previous_payment_uuid ?: 'none', $rejected_payment_uuid));
+            } finally {
+                if ($owner === get_transient($lock_key)) {
+                    delete_transient($lock_key);
+                }
+            }
+        } catch (Throwable $throwable) {
+            $this->log_process_order_throwable($throwable, $order_id, (object) array('id' => $rejected_payment_uuid), 'rejected payment restoration');
+        }
+    }
+
+    /**
+     * Load an order after evicting only that order from WooCommerce caches.
+     *
+     * OrderCache::remove() is the public per-order object cache API. Newer HPOS
+     * versions can additionally cache raw datastore rows, exposed through the
+     * datastore's per-order clear_cached_data() method. clean_post_cache() covers
+     * the equivalent post and metadata caches for the legacy CPT datastore.
+     */
+    private function get_fresh_order($order_id)
+    {
+        $order_id = (int) $order_id;
+
+        if (class_exists('Automattic\\WooCommerce\\Caches\\OrderCache') && function_exists('wc_get_container')) {
+            wc_get_container()->get(Automattic\WooCommerce\Caches\OrderCache::class)->remove($order_id);
+        }
+
+        if (class_exists('WC_Data_Store')) {
+            $data_store = WC_Data_Store::load('order');
+            $data_store_class = $data_store->get_current_class_name();
+            if (method_exists($data_store_class, 'clear_cached_data')) {
+                $data_store->clear_cached_data(array($order_id));
+            }
+        }
+
+        if (function_exists('clean_post_cache')) {
+            clean_post_cache($order_id);
+        }
+
+        return wc_get_order($order_id);
     }
 
     public function generate_redirect_url($order) {
@@ -1995,48 +2109,19 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
     public function admin_handler()
     {
-
-        $request_body = file_get_contents("php://input");
-        $body = json_decode($request_body);
-
-        if ($body !== null && json_last_error() === JSON_ERROR_NONE) {
-
-            $nonce = get_site_transient('handle_swish_account');
-
-            if ($body->nonce == $nonce) {
-
-                if ($body->uuid == $this->account_uuid) {
-
-                    $this->refresh_token = $body->refresh_token;
-                    $this->update_option('swish_refresh_token', $this->refresh_token);
-                    delete_site_transient('swish_access_token');
-                    $this->logger->add(sprintf('Account uuid %s was authorized and got refresh token %s from service', $this->account_uuid, $this->refresh_token));
-                    set_site_transient('swish_connect_result', 'success', MINUTE_IN_SECONDS);
-
-                } else {
-
-                    $this->logger->add(sprintf('Wrong account UUID %s, should have been %s', $body->uuid, $this->account_uuid));
-                    set_site_transient('swish_connect_result', 'failure', MINUTE_IN_SECONDS);
-                    status_header(403, 'wrong_uuid');
-
-                }
-
-            } else {
-
-                $this->logger->add(sprintf('Nonce not verified at admin_callback_handler, incoming nonce %s differs from existing %s', $body->nonce, $nonce));
-                set_site_transient('swish_connect_result', 'failure', MINUTE_IN_SECONDS);
-                status_header(403, 'nonce_error');
-
-            }
-
-        } else {
-
-            $this->logger->add(sprintf('Failed decoding authorize json %s', json_last_error()));
-            set_site_transient('swish_connect_result', 'failure', MINUTE_IN_SECONDS);
-            status_header(403, 'invalid_json');
-
+        $body = json_decode(file_get_contents('php://input'));
+        try {
+            $accepted = (new Woo_Swish_OAuth_Connection($this))->complete_legacy($body);
+        } catch (Throwable $error) {
+            $accepted = false;
         }
+        // Rejection must not log credentials or mutate connection status.
+        status_header($accepted ? 200 : 403);
+    }
 
+    public function store_legacy_refresh_token($account, $expected_token, $token, $access_token, $expires)
+    {
+        (new Woo_Swish_OAuth_Connection($this))->rotate_legacy_refresh_token($account, $expected_token, $token, $access_token, $expires);
     }
 
     public function certificate_info($swish_cert)
@@ -2164,13 +2249,101 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         } catch (Throwable $throwable) {
 
-            $this->logger->add($throwable->getMessage());
+            $this->log_process_order_throwable($throwable, $request['order_id'], (object) $request->get_json_params(), 'REST callback');
 
         }
 
     }
 
-    public function process_order($order, $request_body, $callback = false)
+    public function process_order($order, $request_body, $callback = false, $retry_attempt = 0)
+    {
+        $order_id = $order->get_id();
+
+        if (isset(self::$processing_orders[$order_id])) {
+            $this->logger->add(sprintf('process_order (%s): Skipping recursive processing in the same request', $order_id));
+            return true;
+        }
+
+        $lock_key = 'swish_process_order_' . $order_id;
+        $owner = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : uniqid('swish_', true);
+        $existing_owner = get_transient($lock_key);
+
+        // Transients are a temporary, best-effort mutex. The check/set and the
+        // owner-checked delete are not atomic, and the lock can expire early.
+        if (false !== $existing_owner) {
+            $this->logger->add(sprintf('process_order (%s): Processing lock is busy', $order_id));
+            if ($callback) {
+                $this->schedule_process_order_retry($order_id, $request_body, $retry_attempt, 'lock contention');
+            }
+            return false;
+        }
+
+        set_transient($lock_key, $owner, self::PROCESS_ORDER_LOCK_TTL);
+        if ($owner !== get_transient($lock_key)) {
+            $this->logger->add(sprintf('process_order (%s): Failed to acquire processing lock', $order_id));
+            if ($callback) {
+                $this->schedule_process_order_retry($order_id, $request_body, $retry_attempt, 'lock acquisition failure');
+            }
+            return false;
+        }
+
+        self::$processing_orders[$order_id] = $owner;
+        unset($this->skip_process_order_retry[$order_id]);
+
+        try {
+            $fresh_order = $this->get_fresh_order($order_id);
+            if (!$fresh_order) {
+                throw new RuntimeException(sprintf('Unable to reload order %s', $order_id));
+            }
+
+            // REST permission checks happen before lock acquisition. Re-check the
+            // persisted identity now so a callback deferred by contention cannot
+            // mutate an order after a newer payment attempt has replaced it.
+            if ($callback && !$this->callback_matches_order($fresh_order, $request_body)) {
+                return true;
+            }
+
+            $this->process_order_unlocked($fresh_order, $request_body);
+            return true;
+        } catch (Throwable $throwable) {
+            if ($callback && !isset($this->skip_process_order_retry[$order_id])) {
+                $this->schedule_process_order_retry($order_id, $request_body, $retry_attempt, 'processing failure');
+            }
+            throw $throwable;
+        } finally {
+            unset($this->skip_process_order_retry[$order_id]);
+            unset(self::$processing_orders[$order_id]);
+            if ($owner === get_transient($lock_key)) {
+                delete_transient($lock_key);
+            }
+        }
+    }
+
+    private function callback_matches_order($order, $request_body): bool
+    {
+        $order_id = $order->get_id();
+
+        if (isset($request_body->originalPaymentReference)) {
+            $stored_reference = Woo_Swish_Helper::get_payment_reference($order);
+            if ((string) $stored_reference === (string) $request_body->originalPaymentReference) {
+                return true;
+            }
+
+            $this->logger->add(sprintf('process_order (%s): Discarding superseded refund callback (%s vs %s)', $order_id, $stored_reference, $request_body->originalPaymentReference));
+            return false;
+        }
+
+        $request_id = isset($request_body->id) ? $request_body->id : '';
+        $stored_id = Woo_Swish_Helper::get_payment_uuid($order);
+        if ('' !== (string) $request_id && (string) $stored_id === (string) $request_id) {
+            return true;
+        }
+
+        $this->logger->add(sprintf('process_order (%s): Discarding superseded payment callback (%s vs %s)', $order_id, $stored_id, $request_id ?: 'missing'));
+        return false;
+    }
+
+    private function process_order_unlocked($order, $request_body): void
     {
 
         $current_status = Woo_Swish_Helper::get_transaction_status($order);
@@ -2219,6 +2392,10 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                 break;
             case 'PAID':
                 if (isset($request_body->originalPaymentReference)) {
+                    // From this point a hook may have performed an external side
+                    // effect. Do not automatically replay this callback if the hook
+                    // or the final order save throws.
+                    $this->skip_process_order_retry[$order_id] = true;
                     do_action('swish_ecommerce_refund_complete', $order);
                     /* translators: 1: Transaction type (Test-transaction or Transaction), 2: Transaction ID */
                     Woo_Swish_Helper::note($order, sprintf(__('Refund to customer confirmed - %1$s ID: %2$s', 'woo-swish-e-commerce'), $testmode ? 'Test-transaction' : 'Transaction', $request_body->id));
@@ -2230,16 +2407,31 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
                     Woo_Swish_Helper::set_payment_reference($order, $request_body->paymentReference);
                     Woo_Swish_Helper::set_order_merchant_alias($order, $this->merchant_alias);
 
+                    // payment_complete and its listeners may persist or produce
+                    // external side effects even when the final save later fails.
+                    $this->skip_process_order_retry[$order_id] = true;
+
                     // Fix to handle error in WooCommerce checkout manager
                     if (function_exists('WOOCCM')) {
                         try {
                             $order->payment_complete();
                             do_action('swish_ecommerce_payment_complete', $order);
                         } catch (Throwable $t) {
+                            // Compatibility workaround for Checkout Manager. Do not
+                            // retry: payment_complete or a preceding listener may
+                            // already have persisted state or produced side effects.
+                            $this->log_process_order_throwable($t, $order_id, $request_body, 'payment completion listener');
                         }
                     } else {
-                        $order->payment_complete();
-                        do_action('swish_ecommerce_payment_complete', $order);
+                        try {
+                            $order->payment_complete();
+                            do_action('swish_ecommerce_payment_complete', $order);
+                        } catch (Throwable $t) {
+                            // Preserve the original exception behavior, but do not
+                            // retry completion because side effects may have run.
+                            $this->skip_process_order_retry[$order_id] = true;
+                            throw $t;
+                        }
                     }
                 }
                 break;
@@ -2247,6 +2439,85 @@ class WC_Payment_Gateway_Swish extends WC_Payment_Gateway
 
         $order->save();
 
+    }
+
+    public function retry_process_order($order_id, $request_body, $retry_attempt): void
+    {
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            $this->logger->add(sprintf('process_order (%s): Retry abandoned because the order no longer exists', $order_id));
+            return;
+        }
+
+        try {
+            $this->process_order($order, (object) $request_body, true, (int) $retry_attempt);
+        } catch (Throwable $throwable) {
+            $this->log_process_order_throwable($throwable, $order_id, (object) $request_body, sprintf('deferred retry %d', $retry_attempt));
+        }
+    }
+
+    private function schedule_process_order_retry($order_id, $request_body, $retry_attempt, $reason): void
+    {
+        $next_attempt = (int) $retry_attempt + 1;
+        if ($next_attempt > self::PROCESS_ORDER_MAX_RETRIES) {
+            $this->logger->add(sprintf('process_order (%s): IMPORTANT: Retry exhausted after %d attempts (%s)', $order_id, self::PROCESS_ORDER_MAX_RETRIES, $reason));
+            return;
+        }
+
+        $body = (array) $request_body;
+        $args = array((int) $order_id, $body, $next_attempt);
+
+        try {
+            if (as_has_scheduled_action('swish_process_order_retry', $args, 'swish_process_order')) {
+                return;
+            }
+
+            $action_id = as_schedule_single_action(
+                time() + (10 * $next_attempt),
+                'swish_process_order_retry',
+                $args,
+                'swish_process_order',
+                true
+            );
+            if (!$action_id) {
+                $this->logger->add(sprintf('process_order (%s): IMPORTANT: Failed to enqueue retry %d (%s)', $order_id, $next_attempt, $reason));
+                return;
+            }
+
+            $type = isset($body['originalPaymentReference']) ? 'refund' : 'payment';
+            $request_id = isset($body['id']) ? $body['id'] : 'unknown';
+            $this->logger->add(sprintf('process_order (%s): Enqueued %s retry %d for request %s (%s)', $order_id, $type, $next_attempt, $request_id, $reason));
+        } catch (Throwable $throwable) {
+            $this->logger->add(sprintf(
+                "process_order (%s): IMPORTANT: Retry enqueue failed (%s): %s in %s:%d\nTrace:\n%s",
+                $order_id,
+                $reason,
+                get_class($throwable) . ': ' . $throwable->getMessage(),
+                $throwable->getFile(),
+                $throwable->getLine(),
+                $throwable->getTraceAsString()
+            ));
+        }
+    }
+
+    private function log_process_order_throwable(Throwable $throwable, $order_id, $request_body, $context): void
+    {
+        $status = isset($request_body->status) ? $request_body->status : 'unknown';
+        $request_id = isset($request_body->id) ? $request_body->id : 'unknown';
+        $type = isset($request_body->originalPaymentReference) ? 'refund' : 'payment';
+
+        $this->logger->add(sprintf(
+            "process_order (%s): %s failed for %s request %s (status %s): %s in %s:%d\nTrace:\n%s",
+            $order_id,
+            $context,
+            $type,
+            $request_id,
+            $status,
+            get_class($throwable) . ': ' . $throwable->getMessage(),
+            $throwable->getFile(),
+            $throwable->getLine(),
+            $throwable->getTraceAsString()
+        ));
     }
 
     /**

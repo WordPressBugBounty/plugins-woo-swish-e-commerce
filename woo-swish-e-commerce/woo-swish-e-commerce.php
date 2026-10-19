@@ -5,14 +5,17 @@
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.7.8
+ * Version: 3.7.9
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
  * Text Domain: woo-swish-e-commerce
  *
+ * Requires at least: 5.3
+ * Requires PHP: 7.4
+ *
  * WC requires at least: 4.0
- * WC tested up to: 10.7
+ * WC tested up to: 11.2
  *
  * Copyright:         2018-2020 BjornTech AB
  * License:           GNU General Public License v3.0
@@ -21,7 +24,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.7.8');
+define('WCSW_VERSION', '3.7.9');
 define('WCSW_URL', plugin_dir_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
@@ -170,6 +173,7 @@ class Swish_Commerce_Payments
             return;
         }
 
+        require_once WCSW_PATH . 'classes/woo-swish-oauth-connection.php';
         require_once WCSW_PATH . 'classes/woo-swish-uuid.php';
         require_once WCSW_PATH . 'classes/api/woo-swish-api.php';
         require_once WCSW_PATH . 'classes/api/woo-swish-api-service.php';
@@ -240,13 +244,13 @@ class Swish_Commerce_Payments
         /**
          * Log the activation time in a transient
          */
-        set_site_transient('swish_activation_time', wp_date('c'));
+        set_transient('swish_activation_time', wp_date('c'));
 
         /**
          * Set transient to always force the plugin to ask for credentials when activated
          */
-        set_site_transient('swish_activated', 1);
-        delete_site_transient('swish_activated_or_upgraded');
+        set_transient('swish_activated', 1);
+        delete_transient('swish_activated_or_upgraded');
 
     }
 
@@ -264,17 +268,17 @@ class Swish_Commerce_Payments
                     /**
                      * Log the activation time in a transient
                      */
-                    set_site_transient('swish_upgraded_time', wp_date('c'));
+                    set_transient('swish_upgraded_time', wp_date('c'));
 
                     /**
                      * Set transient to always force the plugin to ask for credentials when activated
                      */
-                    set_site_transient('swish_upgraded', 1);
+                    set_transient('swish_upgraded', 1);
 
                     /**
                      * Delete transient containing the date for activation or upgrade
                      */
-                    delete_site_transient('swish_activated_or_upgraded');
+                    delete_transient('swish_activated_or_upgraded');
                 }
             }
         }

@@ -415,6 +415,15 @@ class Woo_Swish_Settings
                 'default' => '',
             );
 
+            $settings['swish_check_existing_paid'] = array(
+                'title' => __('Check existing payment status', 'woo-swish-e-commerce'),
+                'type' => 'checkbox',
+                'description' => __('If enabled, the plugin will check the status of an existing payment before creating a new one. If already paid, the customer is sent to the thank you page.', 'woo-swish-e-commerce'),
+                'label' => __('Check existing payment status before processing', 'woo-swish-e-commerce'),
+                'class' => '_service_post_connect',
+                'default' => '',
+            );
+
             $settings['swish_service_url'] = array(
                 'title' => __('BjornTech url', 'woo-swish-e-commerce'),
                 'type' => 'text',

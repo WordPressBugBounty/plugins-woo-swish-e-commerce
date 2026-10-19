@@ -1,10 +1,10 @@
 === BjornTech Swish for WooCommerce ===
 Contributors: BjornTech
 Tags: swish, ecommerce, payment, woocommerce, swish-handel
-Requires at least: 4.9
-Tested up to: 6.9
+Requires at least: 5.3
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 3.7.8
+Stable tag: 3.7.9
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -61,6 +61,16 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.7.9 =
+* Verified to work with WordPress 7.1 and WooCommerce 11.2
+* New: Optional setting "Check existing payment status" that checks if an earlier Swish payment for the order is already paid before starting a new one
+* Fix: Duplicate or late payment callbacks can no longer complete an order twice, and a callback for an older payment attempt can no longer overwrite a newer one
+* Fix: If Swish rejects a new payment request, the order keeps its previous payment attempt
+* Fix: Failed callback processing is retried in a controlled way
+* Fix: Access token, notices and activation flags are now stored per site instead of network-wide (multisite)
+* Fix: Disconnect only clears local credentials after the BjornTech service confirms the disconnect
+* Note: Connections that were started but not finished before upgrading need to be started again
+
 = 3.7.8 =
 * Verified to work with WooCommerce 10.7
 * Fix: Fixed JavaScript polling race conditions on wait page
