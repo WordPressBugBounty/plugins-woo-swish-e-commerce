@@ -14,15 +14,22 @@ defined('ABSPATH') || exit;
 class Woo_Swish_API_Functions
 {
 
+    /** @var WC_Payment_Gateway Gateway supplying Swish connection settings. */
+    protected $gateway;
+
     public $text_on_transaction = null;
     public $customer_on_transaction = false;
     public $merchant_alias = null;
     public $api_url = null;
 
-    public function __construct()
+    /**
+     * @param WC_Payment_Gateway|null $gateway Defaults to the ordinary Swish gateway.
+     */
+    public function __construct($gateway = null)
     {
-        $this->text_on_transaction = WC_SEC()->get_option('text_on_transaction', "");
-        $this->customer_on_transaction = wc_string_to_bool(WC_SEC()->get_option('customer_on_transaction'));
+        $this->gateway = $gateway ?: WC_SEC();
+        $this->text_on_transaction = $this->gateway->get_option('text_on_transaction', "");
+        $this->customer_on_transaction = wc_string_to_bool($this->gateway->get_option('customer_on_transaction'));
     }
 
     private function clean_payee_payment_reference($reference)
@@ -103,7 +110,7 @@ class Woo_Swish_API_Functions
         $transaction_text = mb_substr(preg_replace("/[^a-zA-Z0-9åäöÅÄÖ :;.,?!()]+/", "", implode(', ', $transaction_textarray)), 0, 49);
 
         $amount = apply_filters('woo_swish_format_amount', $order->get_total(), $order);
-        if (wc_string_to_bool(WC_SEC()->get_option('swish_format_amount'))) {
+        if (wc_string_to_bool($this->gateway->get_option('swish_format_amount'))) {
             $amount = $this->format_swish_amount($amount);
         }
 
@@ -151,6 +158,12 @@ class Woo_Swish_API_Functions
      */
     public function refund($payment_reference, $order, $merchant_alias, $amount, $callback, $instruction_uuid, $reason = '')
     {
+        return $this->put('/swish-cpcapi/api/v2/refunds/' . $instruction_uuid, $this->refund_parameters($payment_reference, $order, $merchant_alias, $amount, $callback, $reason));
+    }
+
+    /** Build once so recovery can retransmit the exact request with the same instruction ID. */
+    public function refund_parameters($payment_reference, $order, $merchant_alias, $amount, $callback, $reason = '')
+    {
         if ($amount === null) {
             $amount = $order->get_total();
         }
@@ -158,7 +171,7 @@ class Woo_Swish_API_Functions
         $transaction_text = mb_substr(preg_replace("/[^a-zA-Z0-9åäöÅÄÖ :;.,?!()]+/", "", $reason), 0, 49);
 
         $amount_formatted = apply_filters('woo_swish_format_amount', $amount, $order);
-        if (wc_string_to_bool(WC_SEC()->get_option('swish_format_amount'))) {
+        if (wc_string_to_bool($this->gateway->get_option('swish_format_amount'))) {
             $amount_formatted = $this->format_swish_amount($amount_formatted);
         }
 
@@ -188,9 +201,7 @@ class Woo_Swish_API_Functions
             $params['callbackIdentifier'] = (string) $callback_identifier;
         }
 
-        $payment = $this->put('/swish-cpcapi/api/v2/refunds/' . $instruction_uuid, $params);
-
-        return $payment;
+        return $params;
     }
 
     /**

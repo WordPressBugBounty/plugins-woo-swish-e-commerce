@@ -1,7 +1,7 @@
 {
     "name": "woo-swish-e-commerce",
     "title": "BjornTech Swish for WooCommerce",
-    "version": "3.7.9",
+    "version": "3.8.0",
     "author": "WooCommerce",
     "license": "GPL-3.0+",
     "keywords": [],
@@ -24,10 +24,11 @@
         "i18n:pot": "php -d xdebug.max_nesting_level=512 $(which wp) i18n make-pot --exclude=\"node_modules/,languages/,assets/\" --headers='{\"Report-Msgid-Bugs-To\":\"https://woocommerce.com/my-account/create-a-ticket/\", \"language-team\":\"LANGUAGE <EMAIL@ADDRESS>\"}' . languages/woocommerce-gateway-swish.pot",
         "i18n:json": "$(which wp) i18n make-json languages --no-purge",
         "check-engines": "wp-scripts check-engines",
-        "plugin-zip": "wp-scripts plugin-zip",
+        "plugin-zip": "wp-scripts plugin-zip && bash bin/plugin-zip-root.sh",
         "plugin:build:deploy": "pnpm install && wp-scripts build && pnpm run plugin-zip"
     },
     "dependencies": {
+        "qrcode": "^1.5.4",
         "react-device-detect": "^2.2.3",
         "uuid": "^9.0.0"
     },

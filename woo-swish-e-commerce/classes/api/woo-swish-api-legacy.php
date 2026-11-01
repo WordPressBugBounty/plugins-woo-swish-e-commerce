@@ -39,13 +39,13 @@ if (!class_exists('Woo_Swish_API_Legacy', false)) {
          * @access public
          * @return void
          */
-        public function __construct()
+        public function __construct($gateway = null)
         {
-            parent::__construct();
+            parent::__construct($gateway);
             add_action('shutdown', array($this, 'shutdown'));
 
-            $this->merchant_certificate = WC_SEC()->get_option('merchant_certificate');
-            $this->private_key_password = WC_SEC()->get_option('private_key_password');
+            $this->merchant_certificate = $this->gateway->get_option('merchant_certificate');
+            $this->private_key_password = $this->gateway->get_option('private_key_password');
             $this->api_url = 'https://cpc.getswish.net';
 
             // Instantiate an empty object ready for population

@@ -38,7 +38,16 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
      */
     public function is_active()
     {
-        return filter_var( $this->get_setting( 'enabled', false ), FILTER_VALIDATE_BOOLEAN );
+        if (!filter_var($this->get_setting('enabled', false), FILTER_VALIDATE_BOOLEAN)) {
+            return false;
+        }
+
+        // WCS manual renewals can make a one-off gateway look eligible in the
+        // Store API, but this gateway cannot create a recurring consent.
+        return !class_exists('WC_Subscriptions_Cart')
+            || !function_exists('WC')
+            || !WC()->cart
+            || !WC_Subscriptions_Cart::cart_contains_subscription();
     }
 
     /**
@@ -68,7 +77,7 @@ final class WC_Gateway_Swish_Blocks_Support extends AbstractPaymentMethodType
         );
 
         if (function_exists('wp_set_script_translations')) {
-            wp_set_script_translations($handle, 'woocommerce-gateway-swish', Swish_Commerce_Payments::plugin_abspath() . 'languages/');
+            wp_set_script_translations($handle, 'woo-swish-e-commerce', Swish_Commerce_Payments::plugin_abspath() . 'languages/');
         }
 
         return [$handle];

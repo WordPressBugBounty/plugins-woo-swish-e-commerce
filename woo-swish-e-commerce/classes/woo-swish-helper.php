@@ -67,18 +67,22 @@ class Woo_Swish_Helper
      * Returns the order's main callback url
      *
      * @access public
+     * @param int $order_id Order ID.
+     * @param WC_Payment_Gateway|null $gateway Gateway providing callback settings; defaults to WC_SEC().
      * @return string
      */
-    public static function get_callback_url($order_id)
+    public static function get_callback_url($order_id, $gateway = null)
     {
+
+        $gateway = $gateway ?: WC_SEC();
 
         $args = array(
             'order_id' => $order_id,
         );
 
-        if ('_service' == WC_SEC()->connection_type && wc_string_to_bool(WC_SEC()->get_option('swish_central_callback_enable'))) {
-            $args['uuid'] = WC_SEC()->account_uuid;
-            $url = 'https://' . trailingslashit(WC_SEC()->service_url) . 'webhook';
+        if ('_service' == $gateway->connection_type && wc_string_to_bool($gateway->get_option('swish_central_callback_enable'))) {
+            $args['uuid'] = $gateway->account_uuid;
+            $url = 'https://' . trailingslashit($gateway->service_url) . 'webhook';
         } else {
             $url = get_rest_url(null, 'swish/callback');
         }
@@ -383,13 +387,16 @@ class Woo_Swish_Helper
         }
     }
 
-    public static function generate_swish_url($payment_request_token, $callback_url, $is_m_payment)
+    /**
+     * @param WC_Payment_Gateway|null $gateway Optional gateway for logging; defaults to WC_SEC().
+     */
+    public static function generate_swish_url($payment_request_token, $callback_url, $is_m_payment, $gateway = null)
     {
         if ($is_m_payment) {
             $callback_url = add_query_arg('redirected_from_swish', 'true', $callback_url);
             $callback_url = urlencode($callback_url);
             $m_payment_url = 'swish://paymentrequest?token=' . $payment_request_token . '&callbackurl=' . $callback_url . '#returnfromswish';
-            WC_SEC()->logger->add(sprintf('generate_swish_url: M-payment url %s', $m_payment_url));
+            ($gateway ?: WC_SEC())->logger->add(sprintf('generate_swish_url: M-payment url %s', $m_payment_url));
             return $m_payment_url;
         }
 

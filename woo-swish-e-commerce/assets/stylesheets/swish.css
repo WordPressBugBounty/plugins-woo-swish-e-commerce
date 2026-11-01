@@ -158,6 +158,10 @@ label[for=payment_method_swish] {
   line-height: 32px;
 }
 
+label[for=payment_method_swish_subscriptions] {
+  line-height: 32px;
+}
+
 .wc-swish-label-container > img {
   float: right !important;
 }
@@ -222,4 +226,55 @@ label[for=payment_method_swish] {
   font-size: 3.5rem;
   margin-bottom:max(80px, calc(1% + 6vw));
   line-height: 1.3;
+}
+
+/* Match the standalone single-payment wait page without changing theme pages. */
+body.swish-recurring-wait-page {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: #000;
+  font-family: Museo Sans Rounded, sans-serif;
+}
+
+.swish-recurring-wait-page .swish_container {
+  min-height: 100vh;
+  min-height: 100svh;
+  height: auto;
+  padding: 2rem 1rem;
+  box-sizing: border-box;
+}
+
+.swish-recurring-wait {
+  width: 100%;
+  max-width: 64rem;
+}
+
+.swish-recurring-wait .swish-status-new {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  margin-top: 0;
+}
+
+.swish-recurring-wait .swish-button-internal {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.swish-recurring-wait .swish-button-internal a {
+  font-size: clamp(1rem, 3vw, 1.6rem);
+}
+
+.swish-recurring-wait #swish-recurring-qr {
+  margin-top: 2rem;
+}
+
+.swish-recurring-wait #swish-recurring-qr canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+.swish-recurring-wait #swish-recurring-status {
+  margin: 2rem 0 0;
+  font-size: 1rem;
+  line-height: 1.5;
 }

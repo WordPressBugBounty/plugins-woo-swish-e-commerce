@@ -21,19 +21,29 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
         public $account_uuid;
 
-        public function __construct()
+        public $refresh_token;
+
+        public $service_url;
+
+        public function __construct($gateway = null)
         {
-            parent::__construct();
-            $this->account_uuid = WC_SEC()->account_uuid;
-            $this->refresh_token = WC_SEC()->get_option('swish_refresh_token');
-            $this->service_url = WC_SEC()->service_url;
+            parent::__construct($gateway);
+            $this->account_uuid = $this->gateway->account_uuid;
+            $this->refresh_token = $this->gateway->get_option('swish_refresh_token');
+            $this->service_url = $this->gateway->service_url;
+        }
+
+        private function access_token_transient_key()
+        {
+            // Preserve the existing cache for the ordinary Swish gateway.
+            return $this->gateway->id === 'swish' ? 'swish_access_token' : 'swish_access_token_' . $this->gateway->id;
         }
 
         public function get_access_token()
         {
 
             $time_now = time();
-            $access_token = get_transient('swish_access_token');
+            $access_token = get_transient($this->access_token_transient_key());
 
             if (is_string($this->refresh_token) && $this->refresh_token !== '' && !$access_token) {
 
@@ -41,7 +51,7 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                     'grant_type' => 'refresh_token',
                     'account_uuid' => $this->account_uuid,
                     'refresh_token' => $this->refresh_token,
-                    'version' => WC_SEC()->version,
+                    'version' => $this->gateway->version,
                     'callback_url' => get_rest_url(null, 'swish/callback'),
                 );
 
@@ -55,7 +65,7 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
                 $url = 'https://' . $this->service_url . '/token';
 
-                WC_SEC()->logger->add('execute: Refreshing Swish service access credentials.');
+                $this->gateway->logger->add('execute: Refreshing Swish service access credentials.');
 
                 $response = wp_safe_remote_post($url, $args);
 
@@ -82,10 +92,20 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                         throw new Woo_Swish_API_Exception(esc_html(__('Swish service returned invalid credentials', 'woo-swish-e-commerce')), 0, null, $url);
                     }
 
-                    try {
-                        WC_SEC()->store_legacy_refresh_token($this->account_uuid, $this->refresh_token, $response_body->refresh_token, $response_body->access_token, (int) $response_body->expires_in);
-                    } catch (Throwable $error) {
-                        throw new Woo_Swish_API_Exception(esc_html(__('Swish connection changed during credential refresh', 'woo-swish-e-commerce')), 0, null, $url);
+                    if ($this->gateway->id === 'swish') {
+                        // Ordinary gateway: atomic, locked rotation of woocommerce_swish_settings + swish_access_token.
+                        try {
+                            WC_SEC()->store_legacy_refresh_token($this->account_uuid, $this->refresh_token, $response_body->refresh_token, $response_body->access_token, (int) $response_body->expires_in);
+                        } catch (Throwable $error) {
+                            throw new Woo_Swish_API_Exception(esc_html(__('Swish connection changed during credential refresh', 'woo-swish-e-commerce')), 0, null, $url);
+                        }
+                    } else {
+                        // Other gateways (recurring) keep their own settings and access token cache.
+                        if ($this->gateway->get_option('swish_refresh_token') !== $this->refresh_token) {
+                            throw new Woo_Swish_API_Exception(esc_html(__('Swish connection changed during credential refresh', 'woo-swish-e-commerce')), 0, null, $url);
+                        }
+                        $this->gateway->update_option('swish_refresh_token', $response_body->refresh_token);
+                        set_transient($this->access_token_transient_key(), $response_body->access_token, (int) $response_body->expires_in);
                     }
                     $access_token = $response_body->access_token;
                     $this->refresh_token = $response_body->refresh_token;
@@ -177,10 +197,14 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
 
             }
 
+            if (is_array($body) && empty($body)) {
+                $body = null;
+            }
+
             $args = array(
                 'headers' => array(
                     'Content-Type' => 'application/json',
-                    'Content-Length' => strlen($body),
+                    'Content-Length' => is_string($body) ? strlen($body) : 0,
                     'Authorization' => 'Bearer ' . $this->get_access_token(),
                 ),
                 'body' => $body,
@@ -188,23 +212,30 @@ if (!class_exists('Woo_Swish_API_Connection', false)) {
                 'timeout' => 20,
             );
 
-            WC_SEC()->logger->add(sprintf('execute: Sending %s Swish service request.', $method));
+            $this->gateway->logger->add(sprintf('execute: Sending %s Swish service request.', $method));
 
             $response = wp_safe_remote_request($url, $args);
 
             if (is_wp_error($response)) {
 
                 $code = $response->get_error_code();
-                WC_SEC()->logger->add($code);
+                $this->gateway->logger->add($code);
                 $error = $response->get_error_message($code);
-                WC_SEC()->logger->add($error);
+                $this->gateway->logger->add($error);
                 // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-                throw new Woo_Swish_API_Exception(esc_html($error), $code, null, $url);
+                throw new Woo_Swish_API_Exception(esc_html($error), is_numeric($code) ? (int) $code : 0, null, $url);
 
             } else {
 
                 $response_body_json = wp_remote_retrieve_body($response);
                 $http_code = wp_remote_retrieve_response_code($response);
+
+                // Missing/invalid or informational codes do not confirm acceptance.
+                // Keep writes uncertain (code 0), rather than treating them as rejection.
+                if (!is_scalar($http_code) || !preg_match('/^[0-9]{3}$/D', (string) $http_code) || (int) $http_code < 200) {
+                    // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+                    throw new Woo_Swish_API_Exception(esc_html(__('Swish response did not confirm an HTTP success status', 'woo-swish-e-commerce')), 0, null, $url, wp_json_encode($body), $response_body_json);
+                }
 
                 // Handle errors first - always try to decode JSON for error responses
                 if ($http_code > 299) {

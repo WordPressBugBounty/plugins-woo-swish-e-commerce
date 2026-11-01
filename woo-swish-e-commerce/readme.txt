@@ -4,7 +4,7 @@ Tags: swish, ecommerce, payment, woocommerce, swish-handel
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 3.7.9
+Stable tag: 3.8.0
 License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -61,6 +61,10 @@ A:  A small number of installations are using NSS as mechanism for certificate h
 == Screenshots ==
 
 == Changelog ==
+= 3.8.0 =
+* New: Swish recurring payments for WooCommerce Subscriptions (incl. subscription amount changes)
+* Fix: Blocks checkout keeps all Swish number digits when typing, pasting or mirroring
+
 = 3.7.9 =
 * Verified to work with WordPress 7.1 and WooCommerce 11.2
 * New: Optional setting "Check existing payment status" that checks if an earlier Swish payment for the order is already paid before starting a new one

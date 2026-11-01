@@ -19,9 +19,9 @@ if (!class_exists('Woo_Swish_API_Service', false)) {
     class Woo_Swish_API_Service extends Woo_Swish_API_Connection
     {
 
-        public function __construct()
+        public function __construct($gateway = null)
         {
-            parent::__construct();
+            parent::__construct($gateway);
             $this->api_url = $this->service_url;
         }
 

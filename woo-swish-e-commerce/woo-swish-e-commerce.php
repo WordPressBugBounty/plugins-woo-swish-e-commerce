@@ -5,7 +5,7 @@
  *
  * Plugin URI: https://wordpress.org/plugins/woo-swish-e-commerce/
  * Description: Integrates <a href="https://www.getswish.se/foretag/vara-erbjudanden/#foretag_two" target="_blank">Swish e-commerce</a> into your WooCommerce installation.
- * Version: 3.7.9
+ * Version: 3.8.0
  * Author: BjornTech
  * Author URI: https://bjorntech.com/sv/swish-handel?utm_source=wp-swish&utm_medium=plugin&utm_campaign=product
  *
@@ -24,7 +24,7 @@
 
 defined('ABSPATH') || exit;
 
-define('WCSW_VERSION', '3.7.9');
+define('WCSW_VERSION', '3.8.0');
 define('WCSW_URL', plugin_dir_url(__FILE__));
 define('WCSW_PATH', plugin_dir_path(__FILE__));
 define('WCSW_SERVICE_URL', 'swish.finnvid.net/v1');
@@ -117,6 +117,9 @@ class Swish_Commerce_Payments
     public static function add_payment_gateway($methods)
     {
         $methods[] = 'WC_Payment_Gateway_Swish';
+        if (class_exists('WC_Payment_Gateway_Swish_Subscriptions')) {
+            $methods[] = 'WC_Payment_Gateway_Swish_Subscriptions';
+        }
         return $methods;
     }
 
@@ -155,12 +158,14 @@ class Swish_Commerce_Payments
     public static function blocks_init()
     {
         require_once WCSW_PATH . 'classes/blocks/class-wc-swish-payments-blocks.php';
+        require_once WCSW_PATH . 'classes/blocks/class-wc-swish-subscriptions-payments-blocks.php';
         // Registers WooCommerce Blocks integration.
         if (class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
             add_action(
                 'woocommerce_blocks_payment_method_type_registration',
                 function (Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $payment_method_registry) {
                     $payment_method_registry->register(new WC_Gateway_Swish_Blocks_Support());
+                    $payment_method_registry->register(new WC_Gateway_Swish_Subscriptions_Blocks_Support());
                 }
             );
         }
@@ -179,6 +184,7 @@ class Swish_Commerce_Payments
         require_once WCSW_PATH . 'classes/api/woo-swish-api-service.php';
         require_once WCSW_PATH . 'classes/api/woo-swish-api-test.php';
         require_once WCSW_PATH . 'classes/api/woo-swish-api-legacy.php';
+        require_once WCSW_PATH . 'classes/api/woo-swish-api-recurring.php';
         require_once WCSW_PATH . 'classes/woo-swish-exception.php';
         require_once WCSW_PATH . 'classes/woo-swish-log.php';
         require_once WCSW_PATH . 'classes/woo-swish-helper.php';
@@ -188,6 +194,8 @@ class Swish_Commerce_Payments
         require_once WCSW_PATH . 'classes/woo-swish-mobile-detection.php';
         if (class_exists('WC_Payment_Gateway')) {
             self::get_instance();
+            require_once WCSW_PATH . 'classes/woo-swish-subscriptions-gateway.php';
+            WC_Payment_Gateway_Swish_Subscriptions::register_hooks();
         }
 
     }
